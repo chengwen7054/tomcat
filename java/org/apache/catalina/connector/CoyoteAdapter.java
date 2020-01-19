@@ -22,12 +22,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.EnumSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import javax.servlet.ReadListener;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletException;
-import javax.servlet.SessionTrackingMode;
-import javax.servlet.WriteListener;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.ReadListener;
+import jakarta.servlet.RequestDispatcher;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.SessionTrackingMode;
+import jakarta.servlet.WriteListener;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.catalina.Authenticator;
 import org.apache.catalina.Context;
@@ -67,7 +67,7 @@ public class CoyoteAdapter implements Adapter {
 
     // -------------------------------------------------------------- Constants
 
-    private static final String POWERED_BY = "Servlet/4.0 JSP/2.3 " +
+    private static final String POWERED_BY = "Servlet/5.0 JSP/3.0 " +
             "(" + ServerInfo.getServerInfo() + " Java/" +
             System.getProperty("java.vm.vendor") + "/" +
             System.getProperty("java.runtime.version") + ")";
@@ -133,7 +133,7 @@ public class CoyoteAdapter implements Adapter {
         Response response = (Response) res.getNote(ADAPTER_NOTES);
 
         if (request == null) {
-            throw new IllegalStateException("Dispatch may only happen on an existing request.");
+            throw new IllegalStateException(sm.getString("coyoteAdapter.nullRequest"));
         }
 
         boolean success = true;
@@ -609,7 +609,6 @@ public class CoyoteAdapter implements Adapter {
                 if (connector.getAllowTrace()) {
                     allow.append(", TRACE");
                 }
-                // Always allow options
                 res.setHeader("Allow", allow.toString());
                 // Access log entry as processing won't reach AccessLogValve
                 connector.getService().getContainer().logAccess(request, response, 0, true);
@@ -638,13 +637,14 @@ public class CoyoteAdapter implements Adapter {
                 response.sendError(400, "Invalid URI: " + ioe.getMessage());
             }
             // Normalization
-            if (!normalize(req.decodedURI())) {
-                response.sendError(400, "Invalid URI");
-            }
-            // Character decoding
-            convertURI(decodedURI, request);
-            // Check that the URI is still normalized
-            if (!checkNormalize(req.decodedURI())) {
+            if (normalize(req.decodedURI())) {
+                // Character decoding
+                convertURI(decodedURI, request);
+                // Check that the URI is still normalized
+                if (!checkNormalize(req.decodedURI())) {
+                    response.sendError(400, "Invalid URI");
+                }
+            } else {
                 response.sendError(400, "Invalid URI");
             }
         } else {
@@ -727,7 +727,16 @@ public class CoyoteAdapter implements Adapter {
             }
 
             // Look for session ID in cookies and SSL session
-            parseSessionCookiesId(request);
+            try {
+                parseSessionCookiesId(request);
+            } catch (IllegalArgumentException e) {
+                // Too many cookies
+                if (!response.isError()) {
+                    response.setError();
+                    response.sendError(400);
+                }
+                return true;
+            }
             parseSessionSslId(request);
 
             sessionID = request.getRequestedSessionId();
@@ -816,7 +825,7 @@ public class CoyoteAdapter implements Adapter {
             if (wrapper != null) {
                 String[] methods = wrapper.getServletMethods();
                 if (methods != null) {
-                    for (int i=0; i<methods.length; i++) {
+                    for (int i=0; i < methods.length; i++) {
                         if ("TRACE".equals(methods[i])) {
                             continue;
                         }
@@ -828,7 +837,9 @@ public class CoyoteAdapter implements Adapter {
                     }
                 }
             }
-            res.addHeader("Allow", header);
+            if (header != null) {
+                res.addHeader("Allow", header);
+            }
             response.sendError(405, "TRACE method is not allowed");
             // Safe to skip the remainder of this method.
             return true;
@@ -870,9 +881,9 @@ public class CoyoteAdapter implements Adapter {
         }
 
         // Set the authorization type
-        String authtype = req.getAuthType().toString();
-        if (authtype != null) {
-            request.setAuthType(authtype);
+        String authType = req.getAuthType().toString();
+        if (authType != null) {
+            request.setAuthType(authType);
         }
     }
 
@@ -1134,11 +1145,6 @@ public class CoyoteAdapter implements Adapter {
         // An empty URL is not acceptable
         if (start == end) {
             return false;
-        }
-
-        // URL * is acceptable
-        if ((end - start == 1) && b[start] == (byte) '*') {
-            return true;
         }
 
         int pos = 0;

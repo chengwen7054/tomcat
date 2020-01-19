@@ -25,13 +25,13 @@ import java.security.AccessController;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.RequestDispatcher;
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.jasper.Constants;
 import org.apache.jasper.EmbeddedServletOptions;
@@ -108,7 +108,7 @@ public class JspServlet extends HttpServlet implements PeriodicEventListener {
                 e = ExceptionUtils.unwrapInvocationTargetException(e);
                 ExceptionUtils.handleThrowable(e);
                 // Need to localize this.
-                log.warn("Failed to load engineOptionsClass", e);
+                log.warn(Localizer.getMessage("jsp.warning.engineOptionsClass", engineOptionsName), e);
                 // Use the default Options implementation
                 options = new EmbeddedServletOptions(config, context);
             }
@@ -124,7 +124,7 @@ public class JspServlet extends HttpServlet implements PeriodicEventListener {
                     return;
                 }
             } catch (MalformedURLException e) {
-                throw new ServletException("cannot locate jsp file", e);
+                throw new ServletException(Localizer.getMessage("jsp.error.no.jsp", jspFile), e);
             }
             try {
                 if (SecurityUtil.isPackageProtectionEnabled()){
@@ -139,11 +139,11 @@ public class JspServlet extends HttpServlet implements PeriodicEventListener {
                     serviceJspFile(null, null, jspFile, true);
                 }
             } catch (IOException e) {
-                throw new ServletException("Could not precompile jsp: " + jspFile, e);
+                throw new ServletException(Localizer.getMessage("jsp.error.precompilation", jspFile), e);
             } catch (PrivilegedActionException e) {
                 Throwable t = e.getCause();
                 if (t instanceof ServletException) throw (ServletException)t;
-                throw new ServletException("Could not precompile jsp: " + jspFile, e);
+                throw new ServletException(Localizer.getMessage("jsp.error.precompilation", jspFile), e);
             }
         }
 
@@ -269,9 +269,8 @@ public class JspServlet extends HttpServlet implements PeriodicEventListener {
             // precompilation request can be ignored.
             return true;             // ?jsp_precompile=false
         } else {
-            throw new ServletException("Cannot have request parameter " +
-                                       Constants.PRECOMPILE + " set to " +
-                                       value);
+            throw new ServletException(Localizer.getMessage("jsp.error.precompilation.parameter",
+                    Constants.PRECOMPILE, value));
         }
 
     }
@@ -295,7 +294,7 @@ public class JspServlet extends HttpServlet implements PeriodicEventListener {
                 /*
                  * Requested JSP has been target of
                  * RequestDispatcher.include(). Its path is assembled from the
-                 * relevant javax.servlet.include.* request attributes
+                 * relevant jakarta.servlet.include.* request attributes
                  */
                 String pathInfo = (String) request.getAttribute(
                         RequestDispatcher.INCLUDE_PATH_INFO);

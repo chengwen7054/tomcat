@@ -22,7 +22,7 @@ import java.text.FieldPosition;
 import java.util.BitSet;
 import java.util.Date;
 
-import javax.servlet.http.Cookie;
+import jakarta.servlet.http.Cookie;
 
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
@@ -78,7 +78,6 @@ public final class LegacyCookieProcessor extends CookieProcessorBase {
     private final BitSet httpSeparatorFlags = new BitSet(128);
 
     private final BitSet allowedWithoutQuotes = new BitSet(128);
-
 
     public LegacyCookieProcessor() {
         // BitSet elements will default to false
@@ -324,6 +323,14 @@ public final class LegacyCookieProcessor extends CookieProcessorBase {
         if (cookie.isHttpOnly()) {
             buf.append("; HttpOnly");
         }
+
+        SameSiteCookies sameSiteCookiesValue = getSameSiteCookies();
+
+        if (!sameSiteCookiesValue.equals(SameSiteCookies.UNSET)) {
+            buf.append("; SameSite=");
+            buf.append(sameSiteCookiesValue.getValue());
+        }
+
         return buf.toString();
     }
 

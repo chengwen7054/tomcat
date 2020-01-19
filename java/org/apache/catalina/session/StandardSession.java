@@ -39,15 +39,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import javax.servlet.ServletContext;
-import javax.servlet.http.HttpSession;
-import javax.servlet.http.HttpSessionActivationListener;
-import javax.servlet.http.HttpSessionAttributeListener;
-import javax.servlet.http.HttpSessionBindingEvent;
-import javax.servlet.http.HttpSessionBindingListener;
-import javax.servlet.http.HttpSessionEvent;
-import javax.servlet.http.HttpSessionIdListener;
-import javax.servlet.http.HttpSessionListener;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpSessionActivationListener;
+import jakarta.servlet.http.HttpSessionAttributeListener;
+import jakarta.servlet.http.HttpSessionBindingEvent;
+import jakarta.servlet.http.HttpSessionBindingListener;
+import jakarta.servlet.http.HttpSessionEvent;
+import jakarta.servlet.http.HttpSessionIdListener;
+import jakarta.servlet.http.HttpSessionListener;
 
 import org.apache.catalina.Context;
 import org.apache.catalina.Globals;
@@ -247,7 +247,7 @@ public class StandardSession implements HttpSession, Session, Serializable {
      */
     @Deprecated
     protected static volatile
-            javax.servlet.http.HttpSessionContext sessionContext = null;
+            jakarta.servlet.http.HttpSessionContext sessionContext = null;
 
 
     /**
@@ -1119,7 +1119,7 @@ public class StandardSession implements HttpSession, Session, Serializable {
      */
     @Override
     @Deprecated
-    public javax.servlet.http.HttpSessionContext getSessionContext() {
+    public jakarta.servlet.http.HttpSessionContext getSessionContext() {
         if (sessionContext == null)
             sessionContext = new StandardSessionContext();
         return sessionContext;
@@ -1413,10 +1413,11 @@ public class StandardSession implements HttpSession, Session, Serializable {
             throw new IllegalStateException(
                     sm.getString("standardSession.setAttribute.ise", getIdInternal()));
         }
-        if ((manager != null) && manager.getContext().getDistributable() &&
-                !isAttributeDistributable(name, value) && !exclude(name, value)) {
-            throw new IllegalArgumentException(
-                    sm.getString("standardSession.setAttribute.iae", name));
+
+        Context context = manager.getContext();
+
+        if (context.getDistributable() && !isAttributeDistributable(name, value) && !exclude(name, value)) {
+            throw new IllegalArgumentException(sm.getString("standardSession.setAttribute.iae", name));
         }
         // Construct an event with the new value
         HttpSessionBindingEvent event = null;
@@ -1461,7 +1462,6 @@ public class StandardSession implements HttpSession, Session, Serializable {
         }
 
         // Notify interested application event listeners
-        Context context = manager.getContext();
         Object listeners[] = context.getApplicationEventListeners();
         if (listeners == null) {
             return;
@@ -1595,7 +1595,9 @@ public class StandardSession implements HttpSession, Session, Serializable {
             if (exclude(name, value)) {
                 continue;
             }
-            attributes.put(name, value);
+            // ConcurrentHashMap does not allow null keys or values
+            if(null != value)
+                attributes.put(name, value);
         }
         isValid = isValidSave;
 
@@ -1852,7 +1854,7 @@ public class StandardSession implements HttpSession, Session, Serializable {
 
 @Deprecated
 final class StandardSessionContext
-        implements javax.servlet.http.HttpSessionContext {
+        implements jakarta.servlet.http.HttpSessionContext {
 
     private static final List<String> emptyString = Collections.emptyList();
 

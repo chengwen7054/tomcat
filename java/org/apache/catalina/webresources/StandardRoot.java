@@ -45,6 +45,7 @@ import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.buf.UriUtil;
+import org.apache.tomcat.util.compat.JreCompat;
 import org.apache.tomcat.util.http.RequestUtil;
 import org.apache.tomcat.util.res.StringManager;
 
@@ -206,7 +207,7 @@ public class StandardRoot extends LifecycleMBeanBase implements WebResourceRoot 
         return getResource(path, true, false);
     }
 
-    private WebResource getResource(String path, boolean validate,
+    protected WebResource getResource(String path, boolean validate,
             boolean useClassLoaderResources) {
         if (validate) {
             path = validate(path);
@@ -694,9 +695,11 @@ public class StandardRoot extends LifecycleMBeanBase implements WebResourceRoot 
     }
 
     protected void registerURLStreamHandlerFactory() {
-        // Ensure support for jar:war:file:/ URLs will be available (required
-        // for resource JARs in packed WAR files).
-        TomcatURLStreamHandlerFactory.register();
+        if (!JreCompat.isGraalAvailable()) {
+            // Ensure support for jar:war:file:/ URLs will be available (required
+            // for resource JARs in packed WAR files).
+            TomcatURLStreamHandlerFactory.register();
+        }
     }
 
     @Override

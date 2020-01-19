@@ -27,7 +27,8 @@ import java.net.URL;
 import java.net.URLClassLoader;
 
 import javax.management.ObjectName;
-import javax.servlet.ServletContext;
+
+import jakarta.servlet.ServletContext;
 
 import org.apache.catalina.Context;
 import org.apache.catalina.Globals;
@@ -40,6 +41,7 @@ import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.buf.UDecoder;
+import org.apache.tomcat.util.compat.JreCompat;
 import org.apache.tomcat.util.modeler.Registry;
 import org.apache.tomcat.util.res.StringManager;
 
@@ -62,6 +64,7 @@ import org.apache.tomcat.util.res.StringManager;
 public class WebappLoader extends LifecycleMBeanBase
     implements Loader, PropertyChangeListener {
 
+    private static final Log log = LogFactory.getLog(WebappLoader.class);
 
     // ----------------------------------------------------------- Constructors
 
@@ -377,7 +380,7 @@ public class WebappLoader extends LifecycleMBeanBase
             log.debug(sm.getString("webappLoader.starting"));
 
         if (context.getResources() == null) {
-            log.info("No resources for " + context);
+            log.info(sm.getString("webappLoader.noResources", context));
             setState(LifecycleState.STARTING);
             return;
         }
@@ -409,8 +412,7 @@ public class WebappLoader extends LifecycleMBeanBase
         } catch (Throwable t) {
             t = ExceptionUtils.unwrapInvocationTargetException(t);
             ExceptionUtils.handleThrowable(t);
-            log.error( "LifecycleException ", t );
-            throw new LifecycleException("start: ", t);
+            throw new LifecycleException(sm.getString("webappLoader.startError"), t);
         }
 
         setState(LifecycleState.STARTING);
@@ -455,7 +457,7 @@ public class WebappLoader extends LifecycleMBeanBase
                         context.getParent().getName() + ",context=" + contextName);
                 Registry.getRegistry(null, null).unregisterComponent(cloname);
             } catch (Exception e) {
-                log.error("LifecycleException ", e);
+                log.warn(sm.getString("webappLoader.stopError"), e);
             }
         }
 
@@ -624,15 +626,14 @@ public class WebappLoader extends LifecycleMBeanBase
             }
             return false;
         } else {
-            log.info( "Unknown loader " + loader + " " + loader.getClass());
+            // Ignore Graal "unknown" classloader
+            if (!JreCompat.isGraalAvailable()) {
+                log.info(sm.getString("webappLoader.unknownClassLoader", loader, loader.getClass()));
+            }
             return false;
         }
         return true;
     }
-
-
-    private static final Log log = LogFactory.getLog(WebappLoader.class);
-
 
     @Override
     protected String getDomainInternal() {

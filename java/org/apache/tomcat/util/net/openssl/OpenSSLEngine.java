@@ -145,6 +145,7 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
 
     // Use an invalid cipherSuite until the handshake is completed
     // See http://docs.oracle.com/javase/7/docs/api/javax/net/ssl/SSLEngine.html#getSession()
+    private volatile String version;
     private volatile String cipher;
     private volatile String applicationProtocol;
 
@@ -164,6 +165,8 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
     private final OpenSSLSessionContext sessionContext;
     private final boolean alpn;
     private final boolean initialized;
+    private final int certificateVerificationDepth;
+    private final boolean certificateVerificationOptionalNoCA;
 
     private String selectedProtocol = null;
 
@@ -180,31 +183,16 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
      * {@link SSLEngine} belongs to.
      * @param alpn {@code true} if alpn should be used, {@code false}
      * otherwise
-     */
-    OpenSSLEngine(long sslCtx, String fallbackApplicationProtocol,
-            boolean clientMode, OpenSSLSessionContext sessionContext,
-            boolean alpn) {
-        this(sslCtx, fallbackApplicationProtocol, clientMode, sessionContext,
-             alpn, false);
-    }
-
-    /**
-     * Creates a new instance
-     *
-     * @param sslCtx an OpenSSL {@code SSL_CTX} object
-     * @param fallbackApplicationProtocol the fallback application protocol
-     * @param clientMode {@code true} if this is used for clients, {@code false}
-     * otherwise
-     * @param sessionContext the {@link OpenSSLSessionContext} this
-     * {@link SSLEngine} belongs to.
-     * @param alpn {@code true} if alpn should be used, {@code false}
-     * otherwise
      * @param initialized {@code true} if this instance gets its protocol,
      * cipher and client verification from the {@code SSL_CTX} {@code sslCtx}
+     * @param certificateVerificationDepth Certificate verification depth
+     * @param certificateVerificationOptionalNoCA Skip CA verification in
+     *   optional mode
      */
     OpenSSLEngine(long sslCtx, String fallbackApplicationProtocol,
             boolean clientMode, OpenSSLSessionContext sessionContext, boolean alpn,
-            boolean initialized) {
+            boolean initialized, int certificateVerificationDepth,
+            boolean certificateVerificationOptionalNoCA) {
         if (sslCtx == 0) {
             throw new IllegalArgumentException(sm.getString("engine.noSSLContext"));
         }
@@ -218,6 +206,8 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
         this.sessionContext = sessionContext;
         this.alpn = alpn;
         this.initialized = initialized;
+        this.certificateVerificationDepth = certificateVerificationDepth;
+        this.certificateVerificationOptionalNoCA = certificateVerificationOptionalNoCA;
     }
 
     @Override
@@ -572,7 +562,7 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
         int bytesProduced = 0;
         int idx = offset;
         // Do we have enough room in dsts to write decrypted data?
-        if (capacity < pendingApp) {
+        if (capacity == 0) {
             return new SSLEngineResult(SSLEngineResult.Status.BUFFER_OVERFLOW, getHandshakeStatus(), written, 0);
         }
 
@@ -632,7 +622,7 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
             throws SSLException {
         // NOTE: Calling a fake read is necessary before calling pendingReadableBytesInSSL because
         // SSL_pending will return 0 if OpenSSL has not started the current TLS record
-        // See https://www.openssl.org/docs/manmaster/ssl/SSL_pending.html
+        // See https://www.openssl.org/docs/manmaster/man3/SSL_pending.html
         clearLastError();
         int lastPrimingReadResult = SSL.readFromSSL(ssl, EMPTY_ADDR, 0); // priming read
         // check if SSL_read returned <= 0. In this case we need to check the error and see if it was something
@@ -640,7 +630,22 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
         if (lastPrimingReadResult <= 0) {
             checkLastError();
         }
-        return SSL.pendingReadableBytesInSSL(ssl);
+        int pendingReadableBytesInSSL = SSL.pendingReadableBytesInSSL(ssl);
+
+        // TLS 1.0 needs additional handling
+        // TODO Figure out why this is necessary and if a simpler / better
+        // solution is available
+        if (Constants.SSL_PROTO_TLSv1.equals(version) && lastPrimingReadResult == 0 &&
+                pendingReadableBytesInSSL == 0) {
+            // Perform another priming read
+            lastPrimingReadResult = SSL.readFromSSL(ssl, EMPTY_ADDR, 0);
+            if (lastPrimingReadResult <= 0) {
+                checkLastError();
+            }
+            pendingReadableBytesInSSL = SSL.pendingReadableBytesInSSL(ssl);
+        }
+
+        return pendingReadableBytesInSSL;
     }
 
     @Override
@@ -1027,6 +1032,7 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
                     }
                 }
                 session.lastAccessedTime = System.currentTimeMillis();
+                version = SSL.getVersion(ssl);
                 handshakeFinished = true;
                 return SSLEngineResult.HandshakeStatus.FINISHED;
             }
@@ -1094,13 +1100,15 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
             }
             switch (mode) {
                 case NONE:
-                    SSL.setVerify(ssl, SSL.SSL_CVERIFY_NONE, VERIFY_DEPTH);
+                    SSL.setVerify(ssl, SSL.SSL_CVERIFY_NONE, certificateVerificationDepth);
                     break;
                 case REQUIRE:
-                    SSL.setVerify(ssl, SSL.SSL_CVERIFY_REQUIRE, VERIFY_DEPTH);
+                    SSL.setVerify(ssl, SSL.SSL_CVERIFY_REQUIRE, certificateVerificationDepth);
                     break;
                 case OPTIONAL:
-                    SSL.setVerify(ssl, SSL.SSL_CVERIFY_OPTIONAL, VERIFY_DEPTH);
+                    SSL.setVerify(ssl,
+                            certificateVerificationOptionalNoCA ? SSL.SSL_CVERIFY_OPTIONAL_NO_CA : SSL.SSL_CVERIFY_OPTIONAL,
+                            certificateVerificationDepth);
                     break;
             }
             clientAuth = mode;

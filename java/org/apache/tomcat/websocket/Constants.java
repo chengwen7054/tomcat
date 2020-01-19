@@ -20,7 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import javax.websocket.Extension;
+import jakarta.websocket.Extension;
 
 /**
  * Internal implementation constants.
@@ -132,10 +132,6 @@ public class Constants {
             Boolean.getBoolean("org.apache.tomcat.websocket.DISABLE_BUILTIN_EXTENSIONS");
     static final boolean ALLOW_UNSUPPORTED_EXTENSIONS =
             Boolean.getBoolean("org.apache.tomcat.websocket.ALLOW_UNSUPPORTED_EXTENSIONS");
-
-    // Configuration for stream behavior
-    static final boolean STREAMS_DROP_EMPTY_MESSAGES =
-            Boolean.getBoolean("org.apache.tomcat.websocket.STREAMS_DROP_EMPTY_MESSAGES");
 
     public static final boolean STRICT_SPEC_COMPLIANCE =
             Boolean.getBoolean("org.apache.tomcat.websocket.STRICT_SPEC_COMPLIANCE");

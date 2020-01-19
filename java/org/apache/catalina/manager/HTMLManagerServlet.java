@@ -35,11 +35,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
-import javax.servlet.http.Part;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.Part;
 
 import org.apache.catalina.Container;
 import org.apache.catalina.Context;
@@ -62,7 +62,7 @@ import org.apache.tomcat.util.security.Escape;
 * relaxed during testing.
 * <p>
 * The difference between the <code>ManagerServlet</code> and this
-* Servlet is that this Servlet prints out a HTML interface which
+* Servlet is that this Servlet prints out an HTML interface which
 * makes it easier to administrate.
 * <p>
 * However if you use a software that parses the output of
@@ -134,16 +134,16 @@ public final class HTMLManagerServlet extends ManagerServlet {
                 doSessions(cn, request, response, smClient);
                 return;
             } catch (Exception e) {
-                log("HTMLManagerServlet.sessions[" + cn + "]", e);
+                log(sm.getString("htmlManagerServlet.error.sessions", cn), e);
                 message = smClient.getString("managerServlet.exception",
                         e.toString());
             }
         } else if (command.equals("/sslConnectorCiphers")) {
-            sslConnectorCiphers(request, response);
+            sslConnectorCiphers(request, response, smClient);
         } else if (command.equals("/sslConnectorCerts")) {
-            sslConnectorCerts(request, response);
+            sslConnectorCerts(request, response, smClient);
         } else if (command.equals("/sslConnectorTrustedCerts")) {
-            sslConnectorTrustedCerts(request, response);
+            sslConnectorTrustedCerts(request, response, smClient);
         } else if (command.equals("/upload") || command.equals("/deploy") ||
                 command.equals("/reload") || command.equals("/undeploy") ||
                 command.equals("/expire") || command.equals("/start") ||
@@ -328,7 +328,7 @@ public final class HTMLManagerServlet extends ManagerServlet {
     }
 
     /**
-     * Render a HTML list of the currently active Contexts in our virtual host,
+     * Render an HTML list of the currently active Contexts in our virtual host,
      * and memory and server status information.
      *
      * @param request The request
@@ -373,11 +373,11 @@ public final class HTMLManagerServlet extends ManagerServlet {
         args[0] = smClient.getString("htmlManagerServlet.manager");
         args[1] = response.encodeURL(request.getContextPath() + "/html/list");
         args[2] = smClient.getString("htmlManagerServlet.list");
-        args[3] = response.encodeURL
+        args[3] = // External link
             (request.getContextPath() + "/" +
              smClient.getString("htmlManagerServlet.helpHtmlManagerFile"));
         args[4] = smClient.getString("htmlManagerServlet.helpHtmlManager");
-        args[5] = response.encodeURL
+        args[5] = // External link
             (request.getContextPath() + "/" +
              smClient.getString("htmlManagerServlet.helpManagerFile"));
         args[6] = smClient.getString("htmlManagerServlet.helpManager");
@@ -455,9 +455,11 @@ public final class HTMLManagerServlet extends ManagerServlet {
                 }
 
                 args = new Object[7];
-                args[0] = "<a href=\"" +
-                        URLEncoder.DEFAULT.encode(contextPath + "/", StandardCharsets.UTF_8) +
-                        "\">" + Escape.htmlElementContent(displayPath) + "</a>";
+                args[0] = // External link
+                        "<a href=\""
+                        + URLEncoder.DEFAULT.encode(contextPath + "/", StandardCharsets.UTF_8)
+                        + "\" " + Constants.REL_EXTERNAL + ">"
+                        + Escape.htmlElementContent(displayPath) + "</a>";
                 if ("".equals(ctxt.getWebappVersion())) {
                     args[1] = noVersion;
                 } else {
@@ -764,39 +766,39 @@ public final class HTMLManagerServlet extends ManagerServlet {
 
 
     protected void sslConnectorCiphers(HttpServletRequest request,
-            HttpServletResponse response) throws ServletException, IOException {
-        request.setAttribute("cipherList", getConnectorCiphers());
+            HttpServletResponse response, StringManager smClient) throws ServletException, IOException {
+        request.setAttribute("cipherList", getConnectorCiphers(smClient));
         getServletContext().getRequestDispatcher(
                 connectorCiphersJspPath).forward(request, response);
     }
 
 
     protected void sslConnectorCerts(HttpServletRequest request,
-            HttpServletResponse response) throws ServletException, IOException {
-        request.setAttribute("certList", getConnectorCerts());
+            HttpServletResponse response, StringManager smClient) throws ServletException, IOException {
+        request.setAttribute("certList", getConnectorCerts(smClient));
         getServletContext().getRequestDispatcher(
                 connectorCertsJspPath).forward(request, response);
     }
 
 
     protected void sslConnectorTrustedCerts(HttpServletRequest request,
-            HttpServletResponse response) throws ServletException, IOException {
-        request.setAttribute("trustedCertList", getConnectorTrustedCerts());
+            HttpServletResponse response, StringManager smClient) throws ServletException, IOException {
+        request.setAttribute("trustedCertList", getConnectorTrustedCerts(smClient));
         getServletContext().getRequestDispatcher(
                 connectorTrustedCertsJspPath).forward(request, response);
     }
 
 
     /**
-     * @see javax.servlet.Servlet#getServletInfo()
+     * @see jakarta.servlet.Servlet#getServletInfo()
      */
     @Override
     public String getServletInfo() {
-        return "HTMLManagerServlet, Copyright (c) 1999-2018, The Apache Software Foundation";
+        return "HTMLManagerServlet, Copyright (c) 1999-2020, The Apache Software Foundation";
     }
 
     /**
-     * @see javax.servlet.GenericServlet#init()
+     * @see jakarta.servlet.GenericServlet#init()
      */
     @Override
     public void init() throws ServletException {
@@ -827,7 +829,7 @@ public final class HTMLManagerServlet extends ManagerServlet {
             try {
                 idle = Integer.parseInt(idleParam);
             } catch (NumberFormatException e) {
-                log("Could not parse idle parameter to an int: " + idleParam);
+                log(sm.getString("managerServlet.error.idleParam", idleParam));
             }
         }
         return sessions(cn, idle, smClient);
@@ -958,7 +960,7 @@ public final class HTMLManagerServlet extends ManagerServlet {
                     req.setAttribute(APPLICATION_ERROR, "Can't sort session list: one session is invalidated");
                 }
             } else {
-                log("WARNING: unknown sort order: " + sortBy);
+                log(sm.getString("htmlManagerServlet.error.sortOrder", sortBy));
             }
         }
         // keep sort order
@@ -1021,7 +1023,7 @@ public final class HTMLManagerServlet extends ManagerServlet {
             if (null == session) {
                 // Shouldn't happen, but let's play nice...
                 if (debug >= 1) {
-                    log("WARNING: can't invalidate null session " + sessionId);
+                    log("Cannot invalidate null session " + sessionId);
                 }
                 continue;
             }
@@ -1033,7 +1035,7 @@ public final class HTMLManagerServlet extends ManagerServlet {
                 }
             } catch (IllegalStateException ise) {
                 if (debug >= 1) {
-                    log("Can't invalidate already invalidated session id " + sessionId);
+                    log("Cannot invalidate already invalidated session id " + sessionId);
                 }
             }
         }
@@ -1056,7 +1058,7 @@ public final class HTMLManagerServlet extends ManagerServlet {
         if (null == session) {
             // Shouldn't happen, but let's play nice...
             if (debug >= 1) {
-                log("WARNING: can't remove attribute '" + attributeName + "' for null session " + sessionId);
+                log("Cannot remove attribute '" + attributeName + "' for null session " + sessionId);
             }
             return false;
         }
@@ -1065,7 +1067,7 @@ public final class HTMLManagerServlet extends ManagerServlet {
             session.removeAttribute(attributeName);
         } catch (IllegalStateException ise) {
             if (debug >= 1) {
-                log("Can't remote attribute '" + attributeName + "' for invalidated session id " + sessionId);
+                log("Cannot remote attribute '" + attributeName + "' for invalidated session id " + sessionId);
             }
         }
         return wasPresent;

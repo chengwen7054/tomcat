@@ -22,20 +22,20 @@ import java.security.AccessController;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 
-import javax.servlet.AsyncContext;
-import javax.servlet.DispatcherType;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.Servlet;
-import javax.servlet.ServletException;
-import javax.servlet.ServletOutputStream;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletRequestWrapper;
-import javax.servlet.ServletResponse;
-import javax.servlet.ServletResponseWrapper;
-import javax.servlet.UnavailableException;
-import javax.servlet.http.HttpServletMapping;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.AsyncContext;
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.RequestDispatcher;
+import jakarta.servlet.Servlet;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletRequestWrapper;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.ServletResponseWrapper;
+import jakarta.servlet.UnavailableException;
+import jakarta.servlet.http.HttpServletMapping;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.catalina.AsyncDispatcher;
 import org.apache.catalina.Context;
@@ -56,8 +56,8 @@ import org.apache.tomcat.util.res.StringManager;
  * from this resource.  This implementation allows application level servlets
  * to wrap the request and/or response objects that are passed on to the
  * called resource, as long as the wrapping classes extend
- * <code>javax.servlet.ServletRequestWrapper</code> and
- * <code>javax.servlet.ServletResponseWrapper</code>.
+ * <code>jakarta.servlet.ServletRequestWrapper</code> and
+ * <code>jakarta.servlet.ServletResponseWrapper</code>.
  *
  * @author Craig R. McClanahan
  */
@@ -371,7 +371,7 @@ final class ApplicationDispatcher implements AsyncDispatcher, RequestDispatcher 
                 wrequest.setAttribute(RequestDispatcher.FORWARD_MAPPING, hrequest.getHttpServletMapping());
             }
 
-            wrequest.setContextPath(context.getPath());
+            wrequest.setContextPath(context.getEncodedPath());
             wrequest.setRequestURI(requestURI);
             wrequest.setServletPath(servletPath);
             wrequest.setPathInfo(pathInfo);
@@ -618,7 +618,7 @@ final class ApplicationDispatcher implements AsyncDispatcher, RequestDispatcher 
         wrequest.setAttribute(Globals.DISPATCHER_REQUEST_PATH_ATTR, getCombinedPath());
         wrequest.setAttribute(AsyncContext.ASYNC_MAPPING, hrequest.getHttpServletMapping());
 
-        wrequest.setContextPath(context.getPath());
+        wrequest.setContextPath(context.getEncodedPath());
         wrequest.setRequestURI(requestURI);
         wrequest.setServletPath(servletPath);
         wrequest.setPathInfo(pathInfo);
@@ -1043,6 +1043,7 @@ final class ApplicationDispatcher implements AsyncDispatcher, RequestDispatcher 
 
     private void recycleRequestWrapper(State state) {
         if (state.wrapRequest instanceof ApplicationHttpRequest) {
-            ((ApplicationHttpRequest) state.wrapRequest).recycle();        }
+            ((ApplicationHttpRequest) state.wrapRequest).recycle();
+        }
     }
 }

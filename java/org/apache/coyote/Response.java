@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
-import javax.servlet.WriteListener;
+import jakarta.servlet.WriteListener;
 
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
@@ -503,6 +503,9 @@ public final class Response {
     }
 
 
+    /**
+     * @return The name of the current encoding
+     */
     public String getCharacterEncoding() {
         return characterEncoding;
     }
@@ -561,8 +564,7 @@ public final class Response {
 
         String ret = contentType;
 
-        if (ret != null
-            && charset != null) {
+        if (ret != null && charset != null) {
             ret = ret + ";charset=" + characterEncoding;
         }
 

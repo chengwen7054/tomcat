@@ -25,26 +25,26 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Set;
 
-import javax.el.ELContext;
-import javax.el.ELException;
-import javax.el.ExpressionFactory;
-import javax.el.ImportHandler;
-import javax.el.ValueExpression;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.Servlet;
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
-import javax.servlet.jsp.JspException;
-import javax.servlet.jsp.JspFactory;
-import javax.servlet.jsp.JspWriter;
-import javax.servlet.jsp.PageContext;
-import javax.servlet.jsp.tagext.BodyContent;
+import jakarta.el.ELContext;
+import jakarta.el.ELException;
+import jakarta.el.ExpressionFactory;
+import jakarta.el.ImportHandler;
+import jakarta.el.ValueExpression;
+import jakarta.servlet.RequestDispatcher;
+import jakarta.servlet.Servlet;
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.jsp.JspException;
+import jakarta.servlet.jsp.JspFactory;
+import jakarta.servlet.jsp.JspWriter;
+import jakarta.servlet.jsp.PageContext;
+import jakarta.servlet.jsp.tagext.BodyContent;
 
 import org.apache.jasper.Constants;
 import org.apache.jasper.compiler.Localizer;
@@ -132,8 +132,7 @@ public class PageContextImpl extends PageContext {
         if (request instanceof HttpServletRequest && needsSession)
             this.session = ((HttpServletRequest) request).getSession();
         if (needsSession && session == null)
-            throw new IllegalStateException(
-                    "Page needs a session and none is available");
+            throw new IllegalStateException(Localizer.getMessage("jsp.error.page.sessionRequired"));
 
         // initialize the initial out ...
         depth = -1;
@@ -230,7 +229,7 @@ public class PageContextImpl extends PageContext {
             return context.getAttribute(name);
 
         default:
-            throw new IllegalArgumentException("Invalid scope");
+            throw new IllegalArgumentException(Localizer.getMessage("jsp.error.page.invalid.scope"));
         }
     }
 
@@ -304,7 +303,7 @@ public class PageContextImpl extends PageContext {
             break;
 
         default:
-            throw new IllegalArgumentException("Invalid scope");
+            throw new IllegalArgumentException(Localizer.getMessage("jsp.error.page.invalid.scope"));
         }
     }
 
@@ -390,7 +389,7 @@ public class PageContextImpl extends PageContext {
             return context.getAttributeNames();
 
         default:
-            throw new IllegalArgumentException("Invalid scope");
+            throw new IllegalArgumentException(Localizer.getMessage("jsp.error.page.invalid.scope"));
         }
     }
 
@@ -499,7 +498,7 @@ public class PageContextImpl extends PageContext {
 
     @Override
     @Deprecated
-    public javax.servlet.jsp.el.VariableResolver getVariableResolver() {
+    public jakarta.servlet.jsp.el.VariableResolver getVariableResolver() {
         return new org.apache.jasper.el.VariableResolverImpl(
                 this.getELContext());
     }
@@ -583,7 +582,7 @@ public class PageContextImpl extends PageContext {
      */
     @Override
     @Deprecated
-    public javax.servlet.jsp.el.ExpressionEvaluator getExpressionEvaluator() {
+    public jakarta.servlet.jsp.el.ExpressionEvaluator getExpressionEvaluator() {
         return new org.apache.jasper.el.ExpressionEvaluatorImpl(
                 this.applicationContext.getExpressionFactory());
     }
@@ -600,14 +599,14 @@ public class PageContextImpl extends PageContext {
     @SuppressWarnings("deprecation") // Still jave to support old JSP EL
     public void handlePageException(final Throwable t) throws IOException, ServletException {
         if (t == null) {
-            throw new NullPointerException("null Throwable");
+            throw new NullPointerException(Localizer.getMessage("jsp.error.page.nullThrowable"));
         }
 
         if (errorPageURL != null && !errorPageURL.equals("")) {
 
             /*
              * Set request attributes. Do not set the
-             * javax.servlet.error.exception attribute here (instead, set in the
+             * jakarta.servlet.error.exception attribute here (instead, set in the
              * generated servlet code for the error page) in order to prevent
              * the ErrorReportValve, which is invoked as part of forwarding the
              * request to the error page, from throwing it if the response has
@@ -655,7 +654,7 @@ public class PageContextImpl extends PageContext {
 
             Throwable rootCause = null;
             if (t instanceof JspException || t instanceof ELException ||
-                    t instanceof javax.servlet.jsp.el.ELException) {
+                    t instanceof jakarta.servlet.jsp.el.ELException) {
                 rootCause = t.getCause();
             }
 

@@ -21,7 +21,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-import javax.servlet.ServletContext;
+import jakarta.servlet.ServletContext;
 
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
@@ -46,7 +46,7 @@ public class DigesterFactory {
         CLASS_SERVLET_CONTEXT = ServletContext.class;
         Class<?> jspContext = null;
         try {
-            jspContext = Class.forName("javax.servlet.jsp.JspContext");
+            jspContext = Class.forName("jakarta.servlet.jsp.JspContext");
         } catch (ClassNotFoundException e) {
             // Ignore - JSP API is not present.
         }
@@ -140,6 +140,13 @@ public class DigesterFactory {
     private static void add(Map<String,String> ids, String id, String location) {
         if (location != null) {
             ids.put(id, location);
+            // BZ 63311
+            // Support http and https locations as the move away from http and
+            // towards https continues.
+            if (id.startsWith("http://")) {
+                String httpsId = "https://" + id.substring(7);
+                ids.put(httpsId, location);
+            }
         }
     }
 

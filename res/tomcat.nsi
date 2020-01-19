@@ -132,7 +132,7 @@ Var ServiceInstallLog
   LangString TEXT_CONF_SUBTITLE ${LANG_ENGLISH} "Tomcat basic configuration."
   LangString TEXT_CONF_PAGETITLE ${LANG_ENGLISH} ": Configuration Options"
 
-  LangString TEXT_JVM_LABEL1 ${LANG_ENGLISH} "Please select the path of a Java SE 8.0 or later JRE installed on your system."
+  LangString TEXT_JVM_LABEL1 ${LANG_ENGLISH} "Please select the path of a Java @MIN_JAVA_VERSION@ or later JRE installed on your system."
   LangString TEXT_CONF_LABEL_PORT_SHUTDOWN ${LANG_ENGLISH} "Server Shutdown Port"
   LangString TEXT_CONF_LABEL_PORT_HTTP ${LANG_ENGLISH} "HTTP/1.1 Connector Port"
   LangString TEXT_CONF_LABEL_PORT_AJP ${LANG_ENGLISH} "AJP/1.3 Connector Port"
@@ -364,6 +364,51 @@ Section -post
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Apache Tomcat @VERSION_MAJOR_MINOR@ $TomcatServiceName" \
                    "UninstallString" "$\"$INSTDIR\Uninstall.exe$\" -ServiceName=$\"$TomcatServiceName$\""
 
+  ; Configure file permissions
+  ; S-1-5-19     LocalService
+  ; S-1-5-32-544 Local Administrators group
+  ; S-1-5-18     Local System
+  ; S-1-5-11     Authenticated users
+  ;
+  ; Grant admins, LocalService and Local System full control full control
+  nsExec::ExecToStack 'icacls "$INSTDIR" /inheritance:r /grant *S-1-5-19:(OI)(CI)(F) /grant *S-1-5-32-544:(OI)(CI)(F) /grant *S-1-5-18:(OI)(CI)(F)'
+  Pop $0
+  Pop $1
+  StrCmp $0 "0" SetGroupPermissionsOk
+    FileWrite $ServiceInstallLog "Install failed (setting file permissions): $0 $1$\r$\n"
+    MessageBox MB_YESNO|MB_ICONSTOP \
+      "Failed to set file permissions.$\r$\nCheck your settings and permissions.$\r$\nIgnore and continue anyway (not recommended)?" \
+      /SD IDNO IDYES SetGroupPermissionsOk
+    Quit
+  SetGroupPermissionsOk:
+  ClearErrors
+
+  ; Make the icon readable to all authenticated users so it appears correctly in the uninstall UI
+  nsExec::ExecToStack 'icacls "$INSTDIR\tomcat.ico" /inheritance:e /grant *S-1-5-11:(R)'
+  Pop $0
+  Pop $1
+  StrCmp $0 "0" SetIconPermissionsOk
+    FileWrite $ServiceInstallLog "Install failed (setting file permissions for icon): $0 $1$\r$\n"
+    MessageBox MB_YESNO|MB_ICONSTOP \
+      "Failed to set icon file permissions.$\r$\nCheck your settings and permissions.$\r$\nIgnore and continue anyway (not recommended)?" \
+      /SD IDNO IDYES SetIconPermissionsOk
+    Quit
+  SetIconPermissionsOk:
+  ClearErrors
+
+  ; Make the uninstaller readable and executable to all authenticated users so the user that installed Tomcat can also uninstall it
+  nsExec::ExecToStack 'icacls "$INSTDIR\Uninstall.exe" /inheritance:e /grant *S-1-5-11:(RX)'
+  Pop $0
+  Pop $1
+  StrCmp $0 "0" SetUninstallerPermissionsOk
+    FileWrite $ServiceInstallLog "Install failed (setting file permissions for uninstaller): $0 $1$\r$\n"
+    MessageBox MB_YESNO|MB_ICONSTOP \
+      "Failed to set uninstaller file permissions.$\r$\nCheck your settings and permissions.$\r$\nIgnore and continue anyway (not recommended)?" \
+      /SD IDNO IDYES SetUninstallerPermissionsOk
+    Quit
+  SetUninstallerPermissionsOk:
+  ClearErrors
+
 SectionEnd
 
 !define ReadFromConfigIni "!insertmacro ReadFromConfigIni"
@@ -412,7 +457,7 @@ Function .onInit
 
   ;Initialize default values
   StrCpy $JavaHome ""
-  StrCpy $TomcatPortShutdown "8005"
+  StrCpy $TomcatPortShutdown "-1"
   StrCpy $TomcatPortHttp "8080"
   StrCpy $TomcatPortAjp "8009"
   StrCpy $TomcatMenuEntriesEnable "0"
@@ -807,22 +852,26 @@ Function checkJava
   IntOp $R3 $R3 << 8
   IntOp $R2 $R2 + $R3
 
-  IntCmp $R2 0x014c +1 +3 +3
+  IntCmp $R2 0x014c +1 +4 +4
   StrCpy "$Arch" "x86"
+  SetRegView 32
   Goto DonePEHeader
 
-  IntCmp $R2 0x8664 +1 +3 +3
+  IntCmp $R2 0x8664 +1 +4 +4
   StrCpy "$Arch" "x64"
+  SetRegView 64
   Goto DonePEHeader
 
-  IntCmp $R2 0x0200 +1 +3 +3
+  IntCmp $R2 0x0200 +1 +4 +4
   StrCpy "$Arch" "i64"
+  SetRegView 64
   Goto DonePEHeader
 
 WrongPEHeader:
   IfSilent +2
   MessageBox MB_OK|MB_ICONEXCLAMATION 'Cannot read PE header from "$JvmDll"$\r$\nWill assume that the architecture is x86.'
   DetailPrint 'Cannot read PE header from "$JvmDll". Assuming the architecture is x86.'
+  SetRegView 32
   StrCpy "$Arch" "x86"
 
 DonePEHeader:
@@ -915,6 +964,27 @@ Function findJavaHome
     ${EndIf}
   ${EndIf}
 
+  ; If no 32-bit Java (JRE) found, look for 64-bit Java JDK
+  ${If} $1 == ""
+  ${AndIf} $0 != "%PROGRAMW6432%"
+    ReadRegStr $2 HKLM "SOFTWARE\JavaSoft\JDK" "CurrentVersion"
+    ReadRegStr $1 HKLM "SOFTWARE\JavaSoft\JDK\$2" "JavaHome"
+    ; "RuntimeLib" is not available here
+
+    IfErrors 0 +2
+    StrCpy $1 ""
+    ClearErrors
+  ${EndIf}
+
+  ; If nothing found, try environment variable JAVA_HOME
+  ${If} $1 == ""
+    ExpandEnvStrings $1 "%JAVA_HOME%"
+    ${If} $1 == "%JAVA_HOME%"
+      StrCpy $1 ""
+    ${EndIf}
+    ClearErrors
+  ${EndIf}
+
   ; Put the result in the stack
   Push $1
 
@@ -958,12 +1028,13 @@ Function findJVMPath
   IfFileExists "$2" FoundJvmDll
 
   ClearErrors
-  ;Step three: Read defaults from registry
 
+  ;Step three: Read defaults from registry
   ReadRegStr $1 HKLM "SOFTWARE\JavaSoft\Java Runtime Environment" "CurrentVersion"
   ReadRegStr $2 HKLM "SOFTWARE\JavaSoft\Java Runtime Environment\$1" "RuntimeLib"
-
   IfErrors 0 FoundJvmDll
+
+  ;not found
   StrCpy $2 ""
 
   FoundJvmDll:

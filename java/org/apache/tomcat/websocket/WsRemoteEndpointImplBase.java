@@ -33,15 +33,15 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import javax.websocket.CloseReason;
-import javax.websocket.CloseReason.CloseCodes;
-import javax.websocket.DeploymentException;
-import javax.websocket.EncodeException;
-import javax.websocket.Encoder;
-import javax.websocket.EndpointConfig;
-import javax.websocket.RemoteEndpoint;
-import javax.websocket.SendHandler;
-import javax.websocket.SendResult;
+import jakarta.websocket.CloseReason;
+import jakarta.websocket.CloseReason.CloseCodes;
+import jakarta.websocket.DeploymentException;
+import jakarta.websocket.EncodeException;
+import jakarta.websocket.Encoder;
+import jakarta.websocket.EndpointConfig;
+import jakarta.websocket.RemoteEndpoint;
+import jakarta.websocket.SendHandler;
+import jakarta.websocket.SendResult;
 
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
@@ -50,7 +50,7 @@ import org.apache.tomcat.util.res.StringManager;
 
 public abstract class WsRemoteEndpointImplBase implements RemoteEndpoint {
 
-    private static final StringManager sm =
+    protected static final StringManager sm =
             StringManager.getManager(WsRemoteEndpointImplBase.class);
 
     protected static final SendResult SENDRESULT_OK = new SendResult();
@@ -338,7 +338,12 @@ public abstract class WsRemoteEndpointImplBase implements RemoteEndpoint {
                 intermediateMessageHandler,
                 new EndMessageHandler(this, handler), -1));
 
-        messageParts = transformation.sendMessagePart(messageParts);
+        try {
+            messageParts = transformation.sendMessagePart(messageParts);
+        } catch (IOException ioe) {
+            handler.onResult(new SendResult(ioe));
+            return;
+        }
 
         // Some extensions/transformations may buffer messages so it is possible
         // that no message parts will be returned. If this is the case the
@@ -744,12 +749,12 @@ public abstract class WsRemoteEndpointImplBase implements RemoteEndpoint {
         }
 
         // Next write the mask && length length
-        if (payload.limit() < 126) {
-            headerBuffer.put((byte) (payload.limit() | b));
-        } else if (payload.limit() < 65536) {
+        if (payload.remaining() < 126) {
+            headerBuffer.put((byte) (payload.remaining() | b));
+        } else if (payload.remaining() < 65536) {
             headerBuffer.put((byte) (126 | b));
-            headerBuffer.put((byte) (payload.limit() >>> 8));
-            headerBuffer.put((byte) (payload.limit() & 0xFF));
+            headerBuffer.put((byte) (payload.remaining() >>> 8));
+            headerBuffer.put((byte) (payload.remaining() & 0xFF));
         } else {
             // Will never be more than 2^31-1
             headerBuffer.put((byte) (127 | b));
@@ -757,10 +762,10 @@ public abstract class WsRemoteEndpointImplBase implements RemoteEndpoint {
             headerBuffer.put((byte) 0);
             headerBuffer.put((byte) 0);
             headerBuffer.put((byte) 0);
-            headerBuffer.put((byte) (payload.limit() >>> 24));
-            headerBuffer.put((byte) (payload.limit() >>> 16));
-            headerBuffer.put((byte) (payload.limit() >>> 8));
-            headerBuffer.put((byte) (payload.limit() & 0xFF));
+            headerBuffer.put((byte) (payload.remaining() >>> 24));
+            headerBuffer.put((byte) (payload.remaining() >>> 16));
+            headerBuffer.put((byte) (payload.remaining() >>> 8));
+            headerBuffer.put((byte) (payload.remaining() & 0xFF));
         }
         if (masked) {
             headerBuffer.put(mask[0]);
@@ -836,7 +841,7 @@ public abstract class WsRemoteEndpointImplBase implements RemoteEndpoint {
         private final ByteBuffer outputBuffer;
         private final boolean flushRequired;
         private final WsRemoteEndpointImplBase endpoint;
-        private int maskIndex = 0;
+        private volatile int maskIndex = 0;
 
         public OutputBufferSendHandler(SendHandler completion,
                 long blockingWriteTimeoutExpiry,
@@ -983,15 +988,17 @@ public abstract class WsRemoteEndpointImplBase implements RemoteEndpoint {
                 throw new IllegalStateException(
                         sm.getString("wsRemoteEndpoint.closedOutputStream"));
             }
-            if (len == 0) {
-                return;
-            }
             if ((off < 0) || (off > b.length) || (len < 0) ||
                 ((off + len) > b.length) || ((off + len) < 0)) {
                 throw new IndexOutOfBoundsException();
             }
 
             used = true;
+
+            if (len == 0) {
+                return;
+            }
+
             if (buffer.remaining() == 0) {
                 flush();
             }
@@ -1016,7 +1023,7 @@ public abstract class WsRemoteEndpointImplBase implements RemoteEndpoint {
 
             // Optimisation. If there is no data to flush then do not send an
             // empty message.
-            if (!Constants.STREAMS_DROP_EMPTY_MESSAGES || buffer.position() > 0) {
+            if (buffer.position() > 0) {
                 doWrite(false);
             }
         }
@@ -1034,7 +1041,7 @@ public abstract class WsRemoteEndpointImplBase implements RemoteEndpoint {
         }
 
         private void doWrite(boolean last) throws IOException {
-            if (!Constants.STREAMS_DROP_EMPTY_MESSAGES || used) {
+            if (used) {
                 buffer.flip();
                 endpoint.sendMessageBlock(Constants.OPCODE_BINARY, buffer, last);
             }
@@ -1062,15 +1069,17 @@ public abstract class WsRemoteEndpointImplBase implements RemoteEndpoint {
                 throw new IllegalStateException(
                         sm.getString("wsRemoteEndpoint.closedWriter"));
             }
-            if (len == 0) {
-                return;
-            }
             if ((off < 0) || (off > cbuf.length) || (len < 0) ||
                     ((off + len) > cbuf.length) || ((off + len) < 0)) {
                 throw new IndexOutOfBoundsException();
             }
 
             used = true;
+
+            if (len == 0) {
+                return;
+            }
+
             if (buffer.remaining() == 0) {
                 flush();
             }
@@ -1093,7 +1102,7 @@ public abstract class WsRemoteEndpointImplBase implements RemoteEndpoint {
                         sm.getString("wsRemoteEndpoint.closedWriter"));
             }
 
-            if (!Constants.STREAMS_DROP_EMPTY_MESSAGES || buffer.position() > 0) {
+            if (buffer.position() > 0) {
                 doWrite(false);
             }
         }
@@ -1111,7 +1120,7 @@ public abstract class WsRemoteEndpointImplBase implements RemoteEndpoint {
         }
 
         private void doWrite(boolean last) throws IOException {
-            if (!Constants.STREAMS_DROP_EMPTY_MESSAGES || used) {
+            if (used) {
                 buffer.flip();
                 endpoint.sendMessageBlock(buffer, last);
                 buffer.clear();
@@ -1249,7 +1258,7 @@ public abstract class WsRemoteEndpointImplBase implements RemoteEndpoint {
 
     private static class BlockingSendHandler implements SendHandler {
 
-        private SendResult sendResult = null;
+        private volatile SendResult sendResult = null;
 
         @Override
         public void onResult(SendResult result) {

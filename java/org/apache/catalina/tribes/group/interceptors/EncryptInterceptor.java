@@ -17,16 +17,21 @@
 package org.apache.catalina.tribes.group.interceptors;
 
 import java.security.GeneralSecurityException;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.security.SecureRandom;
+import java.security.spec.AlgorithmParameterSpec;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
-import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
-import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.apache.catalina.tribes.Channel;
 import org.apache.catalina.tribes.ChannelException;
+import org.apache.catalina.tribes.ChannelInterceptor;
 import org.apache.catalina.tribes.ChannelMessage;
 import org.apache.catalina.tribes.Member;
 import org.apache.catalina.tribes.group.ChannelInterceptorBase;
@@ -60,24 +65,46 @@ public class EncryptInterceptor extends ChannelInterceptorBase implements Encryp
     private byte[] encryptionKeyBytes;
     private String encryptionKeyString;
 
-    private Cipher encryptionCipher;
-    private Cipher decryptionCipher;
+
+    private BaseEncryptionManager encryptionManager;
 
     public EncryptInterceptor() {
     }
 
     @Override
     public void start(int svc) throws ChannelException {
+        validateChannelChain();
+
         if(Channel.SND_TX_SEQ == (svc & Channel.SND_TX_SEQ)) {
             try {
-                initCiphers();
+                encryptionManager = createEncryptionManager(getEncryptionAlgorithm(),
+                        getEncryptionKeyInternal(),
+                        getProviderName());
             } catch (GeneralSecurityException gse) {
-                log.fatal(sm.getString("encryptInterceptor.init.failed"));
                 throw new ChannelException(sm.getString("encryptInterceptor.init.failed"), gse);
             }
         }
 
         super.start(svc);
+    }
+
+    private void validateChannelChain() throws ChannelException {
+        ChannelInterceptor interceptor = getPrevious();
+        while(null != interceptor) {
+            if(interceptor instanceof TcpFailureDetector)
+                throw new ChannelConfigException(sm.getString("encryptInterceptor.tcpFailureDetector.ordering"));
+
+            interceptor = interceptor.getPrevious();
+        }
+    }
+
+    @Override
+    public void stop(int svc) throws ChannelException {
+        if(Channel.SND_TX_SEQ == (svc & Channel.SND_TX_SEQ)) {
+            encryptionManager.shutdown();
+        }
+
+        super.stop(svc);
     }
 
     @Override
@@ -87,23 +114,20 @@ public class EncryptInterceptor extends ChannelInterceptorBase implements Encryp
             byte[] data = msg.getMessage().getBytes();
 
             // See #encrypt(byte[]) for an explanation of the return value
-            byte[][] bytes = encrypt(data);
+            byte[][] bytes = encryptionManager.encrypt(data);
 
             XByteBuffer xbb = msg.getMessage();
 
             // Completely replace the message
-            xbb.setLength(0);
+            xbb.clear();
             xbb.append(bytes[0], 0, bytes[0].length);
             xbb.append(bytes[1], 0, bytes[1].length);
 
             super.sendMessage(destination, msg, payload);
 
-        } catch (IllegalBlockSizeException ibse) {
+        } catch (GeneralSecurityException gse) {
             log.error(sm.getString("encryptInterceptor.encrypt.failed"));
-            throw new ChannelException(ibse);
-        } catch (BadPaddingException bpe) {
-            log.error(sm.getString("encryptInterceptor.encrypt.failed"));
-            throw new ChannelException(bpe);
+            throw new ChannelException(gse);
         }
     }
 
@@ -112,27 +136,17 @@ public class EncryptInterceptor extends ChannelInterceptorBase implements Encryp
         try {
             byte[] data = msg.getMessage().getBytes();
 
-            data = decrypt(data);
-
-            // Remove the decrypted IV/nonce block from the front of the message
-            int blockSize = getDecryptionCipher().getBlockSize();
-            int trimmedSize = data.length - blockSize;
-            if(trimmedSize < 0) {
-                log.error(sm.getString("encryptInterceptor.decrypt.error.short-message"));
-                throw new IllegalStateException(sm.getString("encryptInterceptor.decrypt.error.short-message"));
-            }
+            data = encryptionManager.decrypt(data);
 
             XByteBuffer xbb = msg.getMessage();
 
             // Completely replace the message with the decrypted one
-            xbb.setLength(0);
-            xbb.append(data, blockSize, data.length - blockSize);
+            xbb.clear();
+            xbb.append(data, 0, data.length);
 
             super.messageReceived(msg);
-        } catch (IllegalBlockSizeException ibse) {
-            log.error(sm.getString("encryptInterceptor.decrypt.failed"), ibse);
-        } catch (BadPaddingException bpe) {
-            log.error(sm.getString("encryptInterceptor.decrypt.failed"), bpe);
+        } catch (GeneralSecurityException gse) {
+            log.error(sm.getString("encryptInterceptor.decrypt.failed"), gse);
         }
     }
 
@@ -256,130 +270,6 @@ public class EncryptInterceptor extends ChannelInterceptorBase implements Encryp
         return providerName;
     }
 
-    private void initCiphers() throws GeneralSecurityException {
-        if(null == getEncryptionKey())
-            throw new IllegalStateException(sm.getString("encryptInterceptor.key.required"));
-
-        String algorithm = getEncryptionAlgorithm();
-
-        String mode = getAlgorithmMode(algorithm);
-
-        if(!"CBC".equalsIgnoreCase(mode))
-            throw new IllegalArgumentException(sm.getString("encryptInterceptor.algorithm.requires-cbc-mode", mode));
-
-        Cipher cipher;
-
-        String providerName = getProviderName();
-        if(null == providerName) {
-            cipher = Cipher.getInstance(algorithm);
-        } else {
-            cipher = Cipher.getInstance(algorithm, getProviderName());
-        }
-
-        byte[] iv = new byte[cipher.getBlockSize()];
-
-        // Always use a random IV For cipher setup.
-        // The recipient doesn't need the (matching) IV because we will always
-        // pre-pad messages with the IV as a nonce.
-        new SecureRandom().nextBytes(iv);
-
-        IvParameterSpec IV = new IvParameterSpec(iv);
-
-        // If this is a cipher transform of the form ALGO/MODE/PAD,
-        // take just the algorithm part.
-        int pos = algorithm.indexOf('/');
-
-        String bareAlgorithm;
-        if(pos >= 0) {
-            bareAlgorithm = algorithm.substring(0, pos);
-        } else {
-            bareAlgorithm = algorithm;
-        }
-
-        SecretKeySpec encryptionKey = new SecretKeySpec(getEncryptionKey(), bareAlgorithm);
-
-        cipher.init(Cipher.ENCRYPT_MODE, encryptionKey, IV);
-
-        encryptionCipher = cipher;
-
-        if(null == providerName) {
-            cipher = Cipher.getInstance(algorithm);
-        } else {
-            cipher = Cipher.getInstance(algorithm, getProviderName());
-        }
-
-        cipher.init(Cipher.DECRYPT_MODE, encryptionKey, new IvParameterSpec(iv));
-
-        decryptionCipher = cipher;
-    }
-
-    private Cipher getEncryptionCipher() {
-        return encryptionCipher;
-    }
-
-    private Cipher getDecryptionCipher() {
-        return decryptionCipher;
-    }
-
-    private static String getAlgorithmMode(String algorithm) {
-        int start = algorithm.indexOf('/');
-        if(start < 0)
-            throw new IllegalArgumentException(sm.getString("encryptInterceptor.algorithm.required"));
-        int end = algorithm.indexOf('/', start + 1);
-        if(start < 0)
-            throw new IllegalArgumentException(sm.getString("encryptInterceptor.algorithm.required"));
-
-        return algorithm.substring(start + 1, end);
-    }
-
-    /**
-     * Encrypts the input <code>bytes</code> into two separate byte arrays:
-     * one for the initial block (which will be the encrypted random IV)
-     * and the second one containing the actual encrypted payload.
-     *
-     * This method returns a pair of byte arrays instead of a single
-     * concatenated one to reduce the number of byte buffers created
-     * and copied during the whole operation -- including message re-building.
-     *
-     * @param bytes The data to encrypt.
-     *
-     * @return The encrypted IV block in [0] and the encrypted data in [1].
-     *
-     * @throws IllegalBlockSizeException If the input data is not a multiple of
-     *             the block size and no padding has been requested (for block
-     *             ciphers) or if the input data cannot be encrypted
-     * @throws BadPaddingException Declared but should not occur during encryption
-     */
-    private byte[][] encrypt(byte[] bytes) throws IllegalBlockSizeException, BadPaddingException {
-        Cipher cipher = getEncryptionCipher();
-
-        // Adding the IV to the beginning of the encrypted data
-        byte[] iv = cipher.getIV();
-
-        byte[][] data = new byte[2][];
-        data[0] = cipher.update(iv, 0, iv.length);
-        data[1] = cipher.doFinal(bytes);
-
-        return data;
-    }
-
-    /**
-     * Decrypts the input <code>bytes</code>.
-     *
-     * @param bytes The data to decrypt.
-     *
-     * @return The decrypted data.
-     *
-     * @throws IllegalBlockSizeException If the input data cannot be encrypted
-     * @throws BadPaddingException If the decrypted data does not include the
-     *             expected number of padding bytes
-     *
-     */
-    private byte[] decrypt(byte[] bytes) throws IllegalBlockSizeException, BadPaddingException {
-        return getDecryptionCipher().doFinal(bytes);
-    }
-
-
     // Copied from org.apache.tomcat.util.buf.HexUtils
 
     private static final int[] DEC = {
@@ -422,5 +312,328 @@ public class EncryptInterceptor extends ChannelInterceptorBase implements Encryp
             result[i] = (byte) ((upperNibble << 4) + lowerNibble);
         }
         return result;
+    }
+
+    private static BaseEncryptionManager createEncryptionManager(String algorithm,
+            byte[] encryptionKey, String providerName)
+        throws NoSuchAlgorithmException, NoSuchPaddingException, NoSuchProviderException {
+        if(null == encryptionKey)
+            throw new IllegalStateException(sm.getString("encryptInterceptor.key.required"));
+
+        String algorithmName;
+        String algorithmMode;
+
+        // We need to break-apart the algorithm name e.g. AES/CBC/PKCS5Padding
+        // take just the algorithm part.
+        int pos = algorithm.indexOf('/');
+
+        if(pos >= 0) {
+            algorithmName = algorithm.substring(0, pos);
+            int pos2 = algorithm.indexOf('/', pos+1);
+
+            if(pos2 >= 0) {
+                algorithmMode = algorithm.substring(pos + 1, pos2);
+            } else {
+                algorithmMode = "CBC";
+            }
+        } else {
+            algorithmName  = algorithm;
+            algorithmMode = "CBC";
+        }
+
+        if("GCM".equalsIgnoreCase(algorithmMode))
+            return new GCMEncryptionManager(algorithm, new SecretKeySpec(encryptionKey, algorithmName), providerName);
+        else if("CBC".equalsIgnoreCase(algorithmMode)
+                || "OFB".equalsIgnoreCase(algorithmMode)
+                || "CFB".equalsIgnoreCase(algorithmMode))
+            return new BaseEncryptionManager(algorithm,
+                    new SecretKeySpec(encryptionKey, algorithmName),
+                    providerName);
+//        else if("ECB".equalsIgnoreCase(algorithmMode)) {
+            // Note: ECB is not an appropriate mode for secure communications.
+//            return new ECBEncryptionManager(algorithm, new SecretKeySpec(encryptionKey, algorithmName), providerName);
+        else
+            throw new IllegalArgumentException(sm.getString("encryptInterceptor.algorithm.unsupported-mode", algorithmMode));
+    }
+
+    private static class BaseEncryptionManager {
+        /**
+         * The fully-specified algorithm e.g. AES/CBC/PKCS5Padding.
+         */
+        private final String algorithm;
+
+        /**
+         * The block size of the cipher.
+         */
+        private final int blockSize;
+
+        /**
+         * The cryptographic provider name.
+         */
+        private final String providerName;
+
+        /**
+         * The secret key to use for encryption and decryption operations.
+         */
+        private final SecretKeySpec secretKey;
+
+        /**
+         * A pool of Cipher objects. Ciphers are expensive to create, but not
+         * to re-initialize, so we use a pool of them which grows as necessary.
+         */
+        private final ConcurrentLinkedQueue<Cipher> cipherPool;
+
+        /**
+         * A pool of SecureRandom objects. Each encrypt operation requires access
+         * to a source of randomness. SecureRandom is thread-safe, but sharing a
+         * single instance will likely be a bottleneck.
+         */
+        private final ConcurrentLinkedQueue<SecureRandom> randomPool;
+
+        public BaseEncryptionManager(String algorithm, SecretKeySpec secretKey, String providerName)
+            throws NoSuchAlgorithmException, NoSuchPaddingException, NoSuchProviderException {
+            this.algorithm = algorithm;
+            this.providerName = providerName;
+            this.secretKey = secretKey;
+
+            cipherPool = new ConcurrentLinkedQueue<>();
+            Cipher cipher = createCipher();
+            blockSize = cipher.getBlockSize();
+            cipherPool.offer(cipher);
+            randomPool = new ConcurrentLinkedQueue<>();
+        }
+
+        public void shutdown() {
+            // Individual Cipher and SecureRandom objects need no explicit teardown
+            cipherPool.clear();
+            randomPool.clear();
+        }
+
+        private String getAlgorithm() {
+            return algorithm;
+        }
+
+        private SecretKeySpec getSecretKey() {
+            return secretKey;
+        }
+
+        /**
+         * Gets the size, in bytes, of the initialization vector for the
+         * cipher being used. The IV size is often, but not always, the block
+         * size for the cipher.
+         *
+         * @return The size of the initialization vector for this algorithm.
+         */
+        protected int getIVSize() {
+            return blockSize;
+        }
+
+        private String getProviderName() {
+            return providerName;
+        }
+
+        private Cipher createCipher()
+            throws NoSuchAlgorithmException, NoSuchPaddingException, NoSuchProviderException {
+            String providerName = getProviderName();
+
+            if(null == providerName) {
+                return Cipher.getInstance(getAlgorithm());
+            } else {
+                return Cipher.getInstance(getAlgorithm(), providerName);
+            }
+        }
+
+        private Cipher getCipher() throws GeneralSecurityException {
+            Cipher cipher = cipherPool.poll();
+
+            if(null == cipher) {
+                cipher = createCipher();
+            }
+
+            return cipher;
+        }
+
+        private void returnCipher(Cipher cipher) {
+            cipherPool.offer(cipher);
+        }
+
+        private SecureRandom getRandom() {
+            SecureRandom random = randomPool.poll();
+
+            if(null == random) {
+                random = new SecureRandom();
+            }
+
+            return random;
+        }
+
+        private void returnRandom(SecureRandom random) {
+            randomPool.offer(random);
+        }
+
+        /**
+         * Encrypts the input <code>bytes</code> into two separate byte arrays:
+         * one for the random initialization vector (IV) used for this message,
+         * and the second one containing the actual encrypted payload.
+         *
+         * This method returns a pair of byte arrays instead of a single
+         * concatenated one to reduce the number of byte buffers created
+         * and copied during the whole operation -- including message re-building.
+         *
+         * @param bytes The data to encrypt.
+         *
+         * @return The IV in [0] and the encrypted data in [1].
+         *
+         * @throws GeneralSecurityException If the input data cannot be encrypted.
+         */
+        private byte[][] encrypt(byte[] bytes) throws GeneralSecurityException {
+            Cipher cipher = null;
+
+            // Always use a random IV For cipher setup.
+            // The recipient doesn't need the (matching) IV because we will always
+            // pre-pad messages with the IV as a nonce.
+            byte[] iv = generateIVBytes();
+
+            try {
+                cipher = getCipher();
+                cipher.init(Cipher.ENCRYPT_MODE, getSecretKey(), generateIV(iv, 0, getIVSize()));
+
+                // Prepend the IV to the beginning of the encrypted data
+                byte[][] data = new byte[2][];
+                data[0] = iv;
+                data[1] = cipher.doFinal(bytes);
+
+                return data;
+            } finally {
+                if(null != cipher)
+                    returnCipher(cipher);
+            }
+        }
+
+        /**
+         * Decrypts the input <code>bytes</code>.
+         *
+         * @param bytes The data to decrypt.
+         *
+         * @return The decrypted data.
+         *
+         * @throws GeneralSecurityException If the input data cannot be decrypted.
+         */
+        private byte[] decrypt(byte[] bytes) throws GeneralSecurityException {
+            Cipher cipher = null;
+
+            int ivSize = getIVSize();
+            AlgorithmParameterSpec IV = generateIV(bytes, 0, ivSize);
+
+            try {
+                cipher = getCipher();
+
+                cipher.init(Cipher.DECRYPT_MODE, getSecretKey(), IV);
+
+                // Decrypt remainder of the message.
+                return cipher.doFinal(bytes, ivSize, bytes.length - ivSize);
+            } finally {
+                if(null != cipher)
+                    returnCipher(cipher);
+            }
+        }
+
+        protected byte[] generateIVBytes() {
+            byte[] ivBytes = new byte[getIVSize()];
+
+            SecureRandom random = null;
+
+            try {
+                random = getRandom();
+
+                // Always use a random IV For cipher setup.
+                // The recipient doesn't need the (matching) IV because we will always
+                // pre-pad messages with the IV as a nonce.
+                random.nextBytes(ivBytes);
+
+                return ivBytes;
+            } finally {
+                if(null != random)
+                    returnRandom(random);
+            }
+        }
+
+        protected AlgorithmParameterSpec generateIV(byte[] ivBytes, int offset, int length) {
+            return new IvParameterSpec(ivBytes, offset, length);
+        }
+    }
+
+    /**
+     * Implements an EncryptionManager for using GCM block cipher modes.
+     *
+     * GCM works a little differently than some of the other block cipher modes
+     * supported by EncryptInterceptor. First of all, it requires a different
+     * kind of AlgorithmParameterSpec object to be used, and second, it
+     * requires a slightly different initialization vector and something called
+     * an "authentication tag".
+     *
+     * The choice of IV length can be somewhat arbitrary, but there is consensus
+     * that 96-bit (12-byte) IVs for GCM are the best trade-off between security
+     * and performance. For other block cipher modes, IV length is the same as
+     * the block size.
+     *
+     * The "authentication tag" is a computed authentication value based upon
+     * the message and the encryption process. GCM defines these tags as the
+     * number of bits to use for the authentication tag, and it's clear that
+     * the highest number of bits supported 128-bit provide the best security.
+     */
+    private static class GCMEncryptionManager extends BaseEncryptionManager
+    {
+        public GCMEncryptionManager(String algorithm, SecretKeySpec secretKey, String providerName)
+                throws NoSuchAlgorithmException, NoSuchPaddingException, NoSuchProviderException {
+            super(algorithm, secretKey, providerName);
+        }
+
+        @Override
+        protected int getIVSize() {
+            return 12; // See class javadoc for explanation of this magic number (12)
+        }
+
+        @Override
+        protected AlgorithmParameterSpec generateIV(byte[] bytes, int offset, int length) {
+            // See class javadoc for explanation of this magic number (128)
+            return new GCMParameterSpec(128, bytes, offset, length);
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class ECBEncryptionManager extends BaseEncryptionManager
+    {
+        public ECBEncryptionManager(String algorithm, SecretKeySpec secretKey, String providerName)
+                throws NoSuchAlgorithmException, NoSuchPaddingException, NoSuchProviderException {
+            super(algorithm, secretKey, providerName);
+        }
+
+        private static final byte[] EMPTY_IV = new byte[0];
+
+        @Override
+        protected int getIVSize() {
+            return 0;
+        }
+
+        @Override
+        protected byte[] generateIVBytes() {
+            return EMPTY_IV;
+        }
+
+        @Override
+        protected AlgorithmParameterSpec generateIV(byte[] bytes, int offset, int length) {
+            return null;
+        }
+    }
+
+    static class ChannelConfigException
+        extends ChannelException
+    {
+        private static final long serialVersionUID = 1L;
+
+        public ChannelConfigException(String message) {
+            super(message);
+        }
     }
 }

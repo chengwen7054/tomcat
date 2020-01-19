@@ -19,6 +19,7 @@
 package org.apache.catalina;
 
 import java.io.File;
+import java.util.concurrent.ScheduledExecutorService;
 
 import org.apache.catalina.deploy.NamingResourcesImpl;
 import org.apache.catalina.startup.Catalina;
@@ -39,10 +40,6 @@ import org.apache.catalina.startup.Catalina;
  * specified by the <code>port</code> property.  When a connection is accepted,
  * the first line is read and compared with the specified shutdown command.
  * If the command matches, shutdown of the server is initiated.
- * <p>
- * <strong>NOTE</strong> - The concrete implementation of this class should
- * register the (singleton) instance with the <code>ServerFactory</code>
- * class in its constructor(s).
  *
  * @author Craig R. McClanahan
  */
@@ -204,6 +201,20 @@ public interface Server extends Lifecycle {
     public void setCatalinaHome(File catalinaHome);
 
 
+    /**
+     * Get the utility thread count.
+     * @return the thread count
+     */
+    public int getUtilityThreads();
+
+
+    /**
+     * Set the utility thread count.
+     * @param utilityThreads the new thread count
+     */
+    public void setUtilityThreads(int utilityThreads);
+
+
     // --------------------------------------------------------- Public Methods
 
 
@@ -250,4 +261,10 @@ public interface Server extends Lifecycle {
      * context.
      */
     public Object getNamingToken();
+
+    /**
+     * @return the utility executor managed by the Service.
+     */
+    public ScheduledExecutorService getUtilityExecutor();
+
 }

@@ -315,9 +315,8 @@ public class Catalina {
                             "setGlobalNamingResources",
                             "org.apache.catalina.deploy.NamingResourcesImpl");
 
-        digester.addObjectCreate("Server/Listener",
-                                 null, // MUST be specified in the element
-                                 "className");
+        digester.addRule("Server/Listener",
+                new ListenerCreateRule(null, "className"));
         digester.addSetProperties("Server/Listener");
         digester.addSetNext("Server/Listener",
                             "addLifecycleListener",
@@ -494,15 +493,16 @@ public class Catalina {
                 digester.push(this);
                 digester.parse(is);
             } catch (Exception e) {
-                log.error("Catalina.stop: ", e);
+                log.error(sm.getString("catalina.stopError"), e);
                 System.exit(1);
             }
         } else {
             // Server object already present. Must be running as a service
             try {
                 s.stop();
+                s.destroy();
             } catch (LifecycleException e) {
-                log.error("Catalina.stop: ", e);
+                log.error(sm.getString("catalina.stopError"), e);
             }
             return;
         }
@@ -521,10 +521,10 @@ public class Catalina {
                 log.error(sm.getString("catalina.stopServer.connectException", s.getAddress(),
                         String.valueOf(s.getPortWithOffset()), String.valueOf(s.getPort()),
                         String.valueOf(s.getPortOffset())));
-                log.error("Catalina.stop: ", ce);
+                log.error(sm.getString("catalina.stopError"), ce);
                 System.exit(1);
             } catch (IOException e) {
-                log.error("Catalina.stop: ", e);
+                log.error(sm.getString("catalina.stopError"), e);
                 System.exit(1);
             }
         } else {
@@ -565,13 +565,9 @@ public class Catalina {
             digester.push(this);
             digester.parse(inputSource);
         } catch (Exception e) {
-            if  (file == null) {
-                log.warn(sm.getString("catalina.configFail", getConfigFile() + "] or [server-embed.xml]"), e);
-            } else {
-                log.warn(sm.getString("catalina.configFail", file.getAbsolutePath()), e);
-                if (file.exists() && !file.canRead()) {
-                    log.warn("Permissions incorrect, read permission is not allowed on the file.");
-                }
+            log.warn(sm.getString("catalina.configFail", file.getAbsolutePath()), e);
+            if (file.exists() && !file.canRead()) {
+                log.warn(sm.getString("catalina.incorrectPermissions"));
             }
             return;
         }
@@ -590,13 +586,13 @@ public class Catalina {
             if (Boolean.getBoolean("org.apache.catalina.startup.EXIT_ON_INIT_FAILURE")) {
                 throw new java.lang.Error(e);
             } else {
-                log.error("Catalina.start", e);
+                log.error(sm.getString("catalina.initError"), e);
             }
         }
 
         long t2 = System.nanoTime();
         if(log.isInfoEnabled()) {
-            log.info("Initialization processed in " + ((t2 - t1) / 1000000) + " ms");
+            log.info(sm.getString("catalina.init", Long.valueOf((t2 - t1) / 1000000)));
         }
     }
 
@@ -626,7 +622,7 @@ public class Catalina {
         }
 
         if (getServer() == null) {
-            log.fatal("Cannot start server. Server instance is not configured.");
+            log.fatal(sm.getString("catalina.noServer"));
             return;
         }
 
@@ -647,7 +643,7 @@ public class Catalina {
 
         long t2 = System.nanoTime();
         if(log.isInfoEnabled()) {
-            log.info("Server startup in " + ((t2 - t1) / 1000000) + " ms");
+            log.info(sm.getString("catalina.startup", Long.valueOf((t2 - t1) / 1000000)));
         }
 
         // Register shutdown hook
@@ -711,7 +707,7 @@ public class Catalina {
                 s.destroy();
             }
         } catch (LifecycleException e) {
-            log.error("Catalina.stop", e);
+            log.error(sm.getString("catalina.stopError"), e);
         }
 
     }
@@ -732,11 +728,7 @@ public class Catalina {
      */
     protected void usage() {
 
-        System.out.println
-            ("usage: java org.apache.catalina.startup.Catalina"
-             + " [ -config {pathname} ]"
-             + " [ -nonaming ] "
-             + " { -help | start | stop }");
+        System.out.println(sm.getString("catalina.usage"));
 
     }
 
@@ -759,7 +751,7 @@ public class Catalina {
     protected void initNaming() {
         // Setting additional variables
         if (!useNaming) {
-            log.info( "Catalina naming disabled");
+            log.info(sm.getString("catalina.noNatming"));
             System.setProperty("catalina.useNaming", "false");
         } else {
             System.setProperty("catalina.useNaming", "true");
@@ -780,7 +772,7 @@ public class Catalina {
                     (javax.naming.Context.INITIAL_CONTEXT_FACTORY,
                      "org.apache.naming.java.javaURLContextFactory");
             } else {
-                log.debug( "INITIAL_CONTEXT_FACTORY already set " + value );
+                log.debug("INITIAL_CONTEXT_FACTORY already set " + value );
             }
         }
     }

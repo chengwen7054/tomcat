@@ -20,9 +20,6 @@ package org.apache.catalina.core;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.util.ArrayList;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 import javax.management.ObjectName;
 
@@ -41,7 +38,6 @@ import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.res.StringManager;
-import org.apache.tomcat.util.threads.TaskThreadFactory;
 
 
 /**
@@ -93,26 +89,6 @@ public class StandardService extends LifecycleMBeanBase implements Service {
      */
     protected final ArrayList<Executor> executors = new ArrayList<>();
 
-    /**
-     * The number of threads available to process utility tasks in this service.
-     */
-    protected int utilityThreads = 0;
-
-    /**
-     * The utility threads daemon flag.
-     */
-    protected boolean utilityThreadsAsDaemon = false;
-
-    /**
-     * Utility executor with scheduling capabilities.
-     */
-    private ScheduledThreadPoolExecutor utilityExecutor = null;
-
-    /**
-     * Utility executor wrapper.
-     */
-    private ScheduledExecutorService utilityExecutorWrapper = null;
-
     private Engine engine = null;
 
     private ClassLoader parentClassLoader = null;
@@ -158,25 +134,25 @@ public class StandardService extends LifecycleMBeanBase implements Service {
                 try {
                     this.engine.start();
                 } catch (LifecycleException e) {
-                    log.warn(sm.getString("standardService.engine.startFailed"), e);
+                    log.error(sm.getString("standardService.engine.startFailed"), e);
                 }
             }
             // Restart MapperListener to pick up new engine.
             try {
                 mapperListener.stop();
             } catch (LifecycleException e) {
-                log.warn(sm.getString("standardService.mapperListener.stopFailed"), e);
+                log.error(sm.getString("standardService.mapperListener.stopFailed"), e);
             }
             try {
                 mapperListener.start();
             } catch (LifecycleException e) {
-                log.warn(sm.getString("standardService.mapperListener.startFailed"), e);
+                log.error(sm.getString("standardService.mapperListener.startFailed"), e);
             }
             if (oldEngine != null) {
                 try {
                     oldEngine.stop();
                 } catch (LifecycleException e) {
-                    log.warn(sm.getString("standardService.engine.stopFailed"), e);
+                    log.error(sm.getString("standardService.engine.stopFailed"), e);
                 }
             }
         }
@@ -226,81 +202,6 @@ public class StandardService extends LifecycleMBeanBase implements Service {
     }
 
 
-    @Override
-    public int getUtilityThreads() {
-        return utilityThreads;
-    }
-
-
-    /**
-     * Handles the special values.
-     */
-    private int getUtilityThreadsInternal() {
-        int result = getUtilityThreads();
-        if (result > 0) {
-            return result;
-        }
-
-        // Zero == Runtime.getRuntime().availableProcessors()
-        // -ve  == Runtime.getRuntime().availableProcessors() + value
-        // These two are the same
-        result = (Runtime.getRuntime().availableProcessors() / 2) + result;
-        if (result < 1) {
-            result = 1;
-        }
-        return result;
-    }
-
-    @Override
-    public void setUtilityThreads(int utilityThreads) {
-        if (utilityThreads < getUtilityThreadsInternal()) {
-            return;
-        }
-        int oldUtilityThreads = this.utilityThreads;
-        this.utilityThreads = utilityThreads;
-
-        // Use local copies to ensure thread safety
-        if (oldUtilityThreads != utilityThreads && utilityExecutor != null) {
-            reconfigureUtilityExecutor(getUtilityThreadsInternal());
-        }
-    }
-
-
-    private synchronized void reconfigureUtilityExecutor(int threads) {
-        if (utilityExecutor != null) {
-            utilityExecutor.setMaximumPoolSize(threads);
-        } else {
-            ScheduledThreadPoolExecutor scheduledThreadPoolExecutor =
-                    new ScheduledThreadPoolExecutor(1,
-                            new TaskThreadFactory(getName() + "-utility-", utilityThreadsAsDaemon, Thread.NORM_PRIORITY));
-            scheduledThreadPoolExecutor.setMaximumPoolSize(threads);
-            scheduledThreadPoolExecutor.setKeepAliveTime(10, TimeUnit.SECONDS);
-            scheduledThreadPoolExecutor.setRemoveOnCancelPolicy(true);
-            scheduledThreadPoolExecutor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
-            utilityExecutor = scheduledThreadPoolExecutor;
-            utilityExecutorWrapper = new org.apache.tomcat.util.threads.ScheduledThreadPoolExecutor(utilityExecutor);
-        }
-    }
-
-
-    /**
-     * Get if the utility threads are daemon threads.
-     * @return the threads daemon flag
-     */
-    public boolean getUtilityThreadsAsDaemon() {
-        return utilityThreadsAsDaemon;
-    }
-
-
-    /**
-     * Set the utility threads daemon flag. The default value is true.
-     * @param utilityThreadsAsDaemon the new thread daemon flag
-     */
-    public void setUtilityThreadsAsDaemon(boolean utilityThreadsAsDaemon) {
-        this.utilityThreadsAsDaemon = utilityThreadsAsDaemon;
-    }
-
-
     // --------------------------------------------------------- Public Methods
 
 
@@ -319,21 +220,19 @@ public class StandardService extends LifecycleMBeanBase implements Service {
             System.arraycopy(connectors, 0, results, 0, connectors.length);
             results[connectors.length] = connector;
             connectors = results;
-
-            if (getState().isAvailable()) {
-                try {
-                    connector.start();
-                } catch (LifecycleException e) {
-                    log.error(sm.getString(
-                            "standardService.connector.startFailed",
-                            connector), e);
-                }
-            }
-
-            // Report this property change to interested listeners
-            support.firePropertyChange("connector", null, connector);
         }
 
+        try {
+            if (getState().isAvailable()) {
+                connector.start();
+            }
+        } catch (LifecycleException e) {
+            throw new IllegalArgumentException(
+                    sm.getString("standardService.connector.startFailed", connector), e);
+        }
+
+        // Report this property change to interested listeners
+        support.firePropertyChange("connector", null, connector);
     }
 
 
@@ -444,7 +343,7 @@ public class StandardService extends LifecycleMBeanBase implements Service {
                     try {
                         ex.start();
                     } catch (LifecycleException x) {
-                        log.error("Executor.start", x);
+                        log.error(sm.getString("standardService.executor.start"), x);
                     }
                 }
             }
@@ -494,7 +393,7 @@ public class StandardService extends LifecycleMBeanBase implements Service {
                 try {
                     ex.stop();
                 } catch (LifecycleException e) {
-                    log.error("Executor.stop", e);
+                    log.error(sm.getString("standardService.executor.stop"), e);
                 }
             }
         }
@@ -613,9 +512,6 @@ public class StandardService extends LifecycleMBeanBase implements Service {
 
         super.initInternal();
 
-        reconfigureUtilityExecutor(getUtilityThreadsInternal());
-        register(utilityExecutor, "type=UtilityExecutor");
-
         if (engine != null) {
             engine.init();
         }
@@ -658,12 +554,6 @@ public class StandardService extends LifecycleMBeanBase implements Service {
 
         if (engine != null) {
             engine.destroy();
-        }
-
-        if (utilityExecutor != null) {
-            utilityExecutor.shutdownNow();
-            unregister("type=UtilityExecutor");
-            utilityExecutor = null;
         }
 
         super.destroyInternal();
@@ -723,10 +613,4 @@ public class StandardService extends LifecycleMBeanBase implements Service {
     public final String getObjectNameKeyProperties() {
         return "type=Service";
     }
-
-    @Override
-    public ScheduledExecutorService getUtilityExecutor() {
-        return utilityExecutorWrapper;
-    }
-
 }

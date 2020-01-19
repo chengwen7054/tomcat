@@ -232,7 +232,7 @@
       calls to <code>request.isSecure()</code> to return <code>true</code>
       for requests received by this Connector. You would want this on an
       SSL Connector or a non SSL connector that is receiving data from a
-      SSL accelerator, like a crypto card, a SSL appliance or even a webserver.
+      SSL accelerator, like a crypto card, an SSL appliance or even a webserver.
       The default value is <code>false</code>.</p>
     </attribute>
 
@@ -376,14 +376,10 @@
       falls below <strong>maxConnections</strong> at which point the server will
       start accepting and processing new connections again. Note that once the
       limit has been reached, the operating system may still accept connections
-      based on the <code>acceptCount</code> setting. The default value varies by
-      connector type. For NIO and NIO2 the default is <code>10000</code>.
-      For APR/native, the default is <code>8192</code>.</p>
-      <p>Note that for APR/native on Windows, the configured value will be
-      reduced to the highest multiple of 1024 that is less than or equal to
-      maxConnections. This is done for performance reasons.<br/>
-      If set to a value of -1, the maxConnections feature is disabled
-      and connections are not counted.</p>
+      based on the <code>acceptCount</code> setting. The default value
+      is <code>8192</code>.</p>
+      <p>For NIO/NIO2 only, setting the value to -1, will disable the
+      maxConnections feature and connections will not be counted.</p>
     </attribute>
 
     <attribute name="maxCookieCount" required="false">
@@ -505,7 +501,9 @@
       </attribute>
       <attribute name="socket.txBufSize" required="false">
         <p>(int)The socket send buffer (SO_SNDBUF) size in bytes. JVM default
-        used if not set.</p>
+        used if not set. Care should be taken if explicitly setting this value.
+        Very poor performance has been observed on some JVMs with values less
+        than ~8k.</p>
       </attribute>
       <attribute name="socket.tcpNoDelay" required="false">
         <p>(bool)This is equivalent to standard attribute
@@ -775,7 +773,7 @@
   directed the original request.</p>
 
   <p>For more information, see the
-  <a href="../proxy-howto.html">Proxy Support HOW-TO</a>.</p>
+  <a href="../proxy-howto.html">Proxy Support How-To</a>.</p>
 
   </subsection>
 

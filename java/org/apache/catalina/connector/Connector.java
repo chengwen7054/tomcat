@@ -749,7 +749,7 @@ public class Connector extends LifecycleMBeanBase  {
         try {
             uriCharset = B2CConverter.getCharset(URIEncoding);
         } catch (UnsupportedEncodingException e) {
-            log.warn(sm.getString("coyoteConnector.invalidEncoding",
+            log.error(sm.getString("coyoteConnector.invalidEncoding",
                     URIEncoding, uriCharset.name()), e);
         }
     }
@@ -949,7 +949,7 @@ public class Connector extends LifecycleMBeanBase  {
         adapter = new CoyoteAdapter(this);
         protocolHandler.setAdapter(adapter);
         if (service != null) {
-            protocolHandler.setUtilityExecutor(service.getUtilityExecutor());
+            protocolHandler.setUtilityExecutor(service.getServer().getUtilityExecutor());
         }
 
         // Make sure parseBodyMethodsSet has a default
@@ -957,8 +957,12 @@ public class Connector extends LifecycleMBeanBase  {
             setParseBodyMethods(getParseBodyMethods());
         }
 
+        if (protocolHandler.isAprRequired() && !AprLifecycleListener.isInstanceCreated()) {
+            throw new LifecycleException(sm.getString("coyoteConnector.protocolHandlerNoAprListener",
+                    getProtocolHandlerClassName()));
+        }
         if (protocolHandler.isAprRequired() && !AprLifecycleListener.isAprAvailable()) {
-            throw new LifecycleException(sm.getString("coyoteConnector.protocolHandlerNoApr",
+            throw new LifecycleException(sm.getString("coyoteConnector.protocolHandlerNoAprLibrary",
                     getProtocolHandlerClassName()));
         }
         if (AprLifecycleListener.isAprAvailable() && AprLifecycleListener.getUseOpenSSL() &&

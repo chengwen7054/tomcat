@@ -18,9 +18,9 @@ package org.apache.catalina.valves;
 import java.util.ArrayList;
 import java.util.List;
 
-import javax.servlet.ServletContext;
-import javax.servlet.SessionCookieConfig;
-import javax.servlet.http.Cookie;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.SessionCookieConfig;
+import jakarta.servlet.http.Cookie;
 
 import org.junit.Test;
 
@@ -224,14 +224,15 @@ public class TestLoadBalancerDrainingValve {
             EasyMock.expect(request.getRequestedSessionId()).andStubReturn(sessionId);
             EasyMock.expect(request.getRequestURI()).andStubReturn(requestURI);
             EasyMock.expect(request.getCookies()).andStubReturn(cookies.toArray(new Cookie[cookies.size()]));
-            EasyMock.expect(servletContext.getSessionCookieConfig()).andStubReturn(cookieConfig);
-            EasyMock.expect(request.getServletContext()).andStubReturn(servletContext);
             EasyMock.expect(request.getContext()).andStubReturn(ctx);
-            EasyMock.expect(Boolean.valueOf(ctx.getSessionCookiePathUsesTrailingSlash())).andStubReturn(Boolean.TRUE);
+            EasyMock.expect(ctx.getSessionCookieName()).andStubReturn(sessionCookieName);
             EasyMock.expect(servletContext.getSessionCookieConfig()).andStubReturn(cookieConfig);
             EasyMock.expect(request.getQueryString()).andStubReturn(queryString);
+            EasyMock.expect(ctx.getSessionCookiePath()).andStubReturn("/");
 
-           if(!enableIgnore) {
+            if (!enableIgnore) {
+                EasyMock.expect(Boolean.valueOf(ctx.getSessionCookiePathUsesTrailingSlash())).andStubReturn(Boolean.TRUE);
+                EasyMock.expect(request.getQueryString()).andStubReturn(queryString);
                 // Response will have cookie deleted
                 MyCookie expectedCookie = new MyCookie(cookieConfig.getName(), "");
                 expectedCookie.setPath(cookieConfig.getPath());

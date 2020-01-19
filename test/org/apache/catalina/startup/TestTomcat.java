@@ -27,10 +27,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -618,5 +619,22 @@ public class TestTomcat extends TomcatBaseTest {
         protected synchronized void startInternal() throws LifecycleException {
             throw new LifecycleException("Deliberately Broken");
         }
+    }
+
+
+    @Test
+    public void testAddWebappUrl() throws Exception {
+        URL docBase = new URL("jar:" + new File("test/deployment/context.jar").toURI().toString() + "!/context.war");
+
+        Tomcat tomcat = getTomcatInstance();
+        tomcat.addWebapp("", docBase);
+        tomcat.start();
+
+        ByteChunk bc = new ByteChunk();
+        int rc = getUrl("http://localhost:" + getPort() + "/", bc, null, null);
+
+        Assert.assertEquals(200, rc);
+        // Index page in sample is 100 bytes
+        Assert.assertEquals(100, bc.getLength());
     }
 }

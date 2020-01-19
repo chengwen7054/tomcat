@@ -26,7 +26,7 @@ import java.security.NoSuchProviderException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.coyote.AbstractProcessor;
 import org.apache.coyote.ActionCode;
@@ -313,15 +313,18 @@ public class AjpProcessor extends AbstractProcessor {
         this.socketWrapper = socket;
 
         boolean cping = false;
-        boolean keptAlive = false;
+        // Expected to block on the first read as there should be at least one
+        // AJP message to read.
+        boolean firstRead = true;
 
         while (!getErrorState().isError() && !protocol.isPaused()) {
             // Parsing the request header
             try {
                 // Get first message of the request
-                if (!readMessage(requestHeaderMessage, !keptAlive)) {
+                if (!readMessage(requestHeaderMessage, firstRead)) {
                     break;
                 }
+                firstRead = false;
 
                 // Processing the request so make sure the connection rather
                 // than keep-alive timeout is used
@@ -340,6 +343,9 @@ public class AjpProcessor extends AbstractProcessor {
                         socketWrapper.write(true, pongMessageArray, 0, pongMessageArray.length);
                         socketWrapper.flush(true);
                     } catch (IOException e) {
+                        if (getLog().isDebugEnabled()) {
+                            getLog().debug("Pong message failed", e);
+                        }
                         setErrorState(ErrorState.CLOSE_CONNECTION_NOW, e);
                     }
                     recycle();
@@ -353,7 +359,6 @@ public class AjpProcessor extends AbstractProcessor {
                     setErrorState(ErrorState.CLOSE_CONNECTION_NOW, null);
                     break;
                 }
-                keptAlive = true;
                 request.setStartTime(System.currentTimeMillis());
             } catch (IOException e) {
                 setErrorState(ErrorState.CLOSE_CONNECTION_NOW, e);

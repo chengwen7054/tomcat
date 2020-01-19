@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.catalina.realm;
 
 import java.io.IOException;
@@ -63,6 +62,7 @@ import javax.net.ssl.SSLSocketFactory;
 
 import org.apache.catalina.LifecycleException;
 import org.ietf.jgss.GSSCredential;
+import org.ietf.jgss.GSSName;
 
 /**
  * <p>Implementation of <strong>Realm</strong> that works with a directory
@@ -497,7 +497,18 @@ public class JNDIRealm extends RealmBase {
      */
     private String sslProtocol;
 
+    private boolean forceDnHexEscape = false;
+
+
     // ------------------------------------------------------------- Properties
+
+    public boolean getForceDnHexEscape() {
+        return forceDnHexEscape;
+    }
+
+    public void setForceDnHexEscape(boolean forceDnHexEscape) {
+        this.forceDnHexEscape = forceDnHexEscape;
+    }
 
     /**
      * @return the type of authentication to use.
@@ -1385,7 +1396,7 @@ public class JNDIRealm extends RealmBase {
                             if (containerLog.isDebugEnabled()) {
                                 containerLog.debug("Found roles: " + roles.toString());
                             }
-                            return new GenericPrincipal(username, credentials, roles);
+                            return new GenericPrincipal(username, roles);
                         }
                     } catch (InvalidNameException ine) {
                         // Log the problem for posterity
@@ -1415,7 +1426,7 @@ public class JNDIRealm extends RealmBase {
             }
 
             // Create and return a suitable Principal for this user
-            return new GenericPrincipal(username, credentials, roles);
+            return new GenericPrincipal(username, roles);
         }
     }
 
@@ -1517,7 +1528,6 @@ public class JNDIRealm extends RealmBase {
                 containerLog.debug("Found user by search [" + user + "]");
             }
         }
-
         if (userPassword == null && credentials != null && user != null) {
             // The password is available. Insert it since it may be required for
             // role searches.
@@ -2010,7 +2020,8 @@ public class JNDIRealm extends RealmBase {
                 Map<String, String> newThisRound = new HashMap<>(); // Stores the groups we find in this iteration
 
                 for (Entry<String, String> group : newGroups.entrySet()) {
-                    filter = roleFormat.format(new String[] { group.getKey(), group.getValue(), group.getValue() });
+                    filter = roleFormat.format(new String[] { doRFC2254Encoding(group.getKey()),
+                            group.getValue(), group.getValue() });
 
                     if (containerLog.isTraceEnabled()) {
                         containerLog.trace("Perform a nested group search with base "+ roleBase + " and filter " + filter);
@@ -2211,7 +2222,7 @@ public class JNDIRealm extends RealmBase {
 
         try {
             User user = getUser(open(), username, null);
-             if (user == null) {
+            if (user == null) {
                 // User should be found...
                 return null;
             } else {
@@ -2235,6 +2246,21 @@ public class JNDIRealm extends RealmBase {
     }
 
     @Override
+    protected Principal getPrincipal(GSSName gssName,
+            GSSCredential gssCredential) {
+        String name = gssName.toString();
+
+        if (isStripRealmForGss()) {
+            int i = name.indexOf('@');
+            if (i > 0) {
+                // Zero so we don't leave a zero length name
+                name = name.substring(0, i);
+            }
+        }
+
+        return getPrincipal(name, gssCredential);
+    }
+
     protected Principal getPrincipal(String username,
             GSSCredential gssCredential) {
 
@@ -2330,16 +2356,18 @@ public class JNDIRealm extends RealmBase {
                 roles = getRoles(context, user);
             }
         } finally {
-            restoreEnvironmentParameter(context,
-                    Context.SECURITY_AUTHENTICATION, preservedEnvironment);
-            restoreEnvironmentParameter(context,
-                    "javax.security.sasl.server.authentication", preservedEnvironment);
-            restoreEnvironmentParameter(context, "javax.security.sasl.qop",
-                    preservedEnvironment);
+            if (gssCredential != null && isUseDelegatedCredential()) {
+                restoreEnvironmentParameter(context,
+                        Context.SECURITY_AUTHENTICATION, preservedEnvironment);
+                restoreEnvironmentParameter(context,
+                        "javax.security.sasl.server.authentication", preservedEnvironment);
+                restoreEnvironmentParameter(context, "javax.security.sasl.qop",
+                        preservedEnvironment);
+            }
         }
 
         if (user != null) {
-            return new GenericPrincipal(user.getUserName(), user.getPassword(),
+            return new GenericPrincipal(user.getUserName(),
                     roles, null, null, gssCredential);
         }
 
@@ -2377,6 +2405,10 @@ public class JNDIRealm extends RealmBase {
             context = createDirContext(getDirectoryContextEnvironment());
 
         } catch (Exception e) {
+            if (alternateURL == null || alternateURL.length() == 0) {
+                // No alternate URL. Re-throw the exception.
+                throw e;
+            }
 
             connectionAttempt = 1;
 
@@ -2718,6 +2750,7 @@ public class JNDIRealm extends RealmBase {
         // we need to composite a name with the base name, the context name, and
         // the result name.  For non-relative names, use the returned name.
         String resultName = result.getName();
+        Name name;
         if (result.isRelative()) {
            if (containerLog.isTraceEnabled()) {
                containerLog.trace("  search returned relative name: " + resultName);
@@ -2729,9 +2762,8 @@ public class JNDIRealm extends RealmBase {
            // Bugzilla 32269
            Name entryName = parser.parse(new CompositeName(resultName).get(0));
 
-           Name name = contextName.addAll(baseName);
+           name = contextName.addAll(baseName);
            name = name.addAll(entryName);
-           return name.toString();
         } else {
            if (containerLog.isTraceEnabled()) {
                containerLog.trace("  search returned absolute name: " + resultName);
@@ -2747,14 +2779,96 @@ public class JNDIRealm extends RealmBase {
                            "Search returned unparseable absolute name: " +
                            resultName );
                }
-               Name name = parser.parse(pathComponent.substring(1));
-               return name.toString();
+               name = parser.parse(pathComponent.substring(1));
            } catch ( URISyntaxException e ) {
                throw new InvalidNameException(
                        "Search returned unparseable absolute name: " +
                        resultName );
            }
         }
+
+        if (getForceDnHexEscape()) {
+            // Bug 63026
+            return convertToHexEscape(name.toString());
+        } else {
+            return name.toString();
+        }
+    }
+
+
+    protected static String convertToHexEscape(String input) {
+        if (input.indexOf('\\') == -1) {
+            // No escaping present. Return original.
+            return input;
+        }
+
+        // +6 allows for 3 escaped characters by default
+        StringBuilder result = new StringBuilder(input.length() + 6);
+        boolean previousSlash = false;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+
+            if (previousSlash) {
+                switch (c) {
+                    case ' ': {
+                        result.append("\\20");
+                        break;
+                    }
+                    case '\"': {
+                        result.append("\\22");
+                        break;
+                    }
+                    case '#': {
+                        result.append("\\23");
+                        break;
+                    }
+                    case '+': {
+                        result.append("\\2B");
+                        break;
+                    }
+                    case ',': {
+                        result.append("\\2C");
+                        break;
+                    }
+                    case ';': {
+                        result.append("\\3B");
+                        break;
+                    }
+                    case '<': {
+                        result.append("\\3C");
+                        break;
+                    }
+                    case '=': {
+                        result.append("\\3D");
+                        break;
+                    }
+                    case '>': {
+                        result.append("\\3E");
+                        break;
+                    }
+                    case '\\': {
+                        result.append("\\5C");
+                        break;
+                    }
+                    default:
+                        result.append('\\');
+                        result.append(c);
+                }
+                previousSlash = false;
+            } else {
+                if (c == '\\') {
+                    previousSlash = true;
+                } else {
+                    result.append(c);
+                }
+            }
+        }
+
+        if (previousSlash) {
+            result.append('\\');
+        }
+
+        return result.toString();
     }
 
 
@@ -2804,8 +2918,6 @@ public class JNDIRealm extends RealmBase {
         public String getUserRoleId() {
             return userRoleId;
         }
-
-
     }
 }
 

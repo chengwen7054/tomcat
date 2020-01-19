@@ -112,7 +112,6 @@ public class StaticMembershipProvider extends MembershipProviderBase implements 
         }
         startLevel = (startLevel & (~level));
         if ( startLevel == 0 ) {
-            executor.shutdownNow();
             running = false;
             if (thread != null) {
                 thread.interrupt();
@@ -272,7 +271,7 @@ public class StaticMembershipProvider extends MembershipProviderBase implements 
         try {
             if (!useThread) ping();
         } catch (ChannelException e) {
-            log.error(sm.getString("staticMembershipProvider.heartbeat.failed"), e);
+            log.warn(sm.getString("staticMembershipProvider.heartbeat.failed"), e);
         }
     }
 

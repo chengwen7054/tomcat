@@ -21,8 +21,8 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.CompletionHandler;
 
-import javax.websocket.CloseReason;
-import javax.websocket.CloseReason.CloseCodes;
+import jakarta.websocket.CloseReason;
+import jakarta.websocket.CloseReason.CloseCodes;
 
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
@@ -116,6 +116,10 @@ public class WsFrameClient extends WsFrameBase {
     }
 
 
+    /*
+     * Fatal error. Usually an I/O error. Try and send notifications. Make sure
+     * socket is closed.
+     */
     private final void close(Throwable t) {
         changeReadState(ReadState.CLOSING);
         CloseReason cr;
@@ -125,11 +129,7 @@ public class WsFrameClient extends WsFrameBase {
             cr = new CloseReason(CloseCodes.CLOSED_ABNORMALLY, t.getMessage());
         }
 
-        try {
-            wsSession.close(cr);
-        } catch (IOException ignore) {
-            // Ignore
-        }
+        wsSession.doClose(cr, cr, true);
     }
 
 

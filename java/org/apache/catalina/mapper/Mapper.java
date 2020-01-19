@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import javax.servlet.http.MappingMatch;
+import jakarta.servlet.http.MappingMatch;
 
 import org.apache.catalina.Context;
 import org.apache.catalina.Host;
@@ -270,12 +270,12 @@ public final class Mapper {
             addHost(hostName, new String[0], host);
             mappedHost = exactFind(hosts, hostName);
             if (mappedHost == null) {
-                log.error("No host found: " + hostName);
+                log.error(sm.getString("mapper.addContext.noHost", hostName));
                 return;
             }
         }
         if (mappedHost.isAlias()) {
-            log.error("No host found: " + hostName);
+            log.error(sm.getString("mapper.addContext.hostIsAlias", hostName));
             return;
         }
         int slashCount = slashCount(path);
@@ -388,7 +388,7 @@ public final class Mapper {
         MappedHost host = exactFind(hosts, hostName);
         if (host == null || host.isAlias()) {
             if (!silent) {
-                log.error("No host found: " + hostName);
+                log.error(sm.getString("mapper.findContext.noHostOrAlias", hostName));
             }
             return null;
         }
@@ -396,15 +396,14 @@ public final class Mapper {
                 contextPath);
         if (context == null) {
             if (!silent) {
-                log.error("No context found: " + contextPath);
+                log.error(sm.getString("mapper.findContext.noContext", contextPath));
             }
             return null;
         }
         ContextVersion contextVersion = exactFind(context.versions, version);
         if (contextVersion == null) {
             if (!silent) {
-                log.error("No context version found: " + contextPath + " "
-                        + version);
+                log.error(sm.getString("mapper.findContext.noContextVersion", contextPath, version));
             }
             return null;
         }
@@ -1028,22 +1027,28 @@ public final class Mapper {
             char[] buf = path.getBuffer();
             if (contextVersion.resources != null && buf[pathEnd -1 ] != '/') {
                 String pathStr = path.toString();
-                WebResource file;
-                // Handle context root
-                if (pathStr.length() == 0) {
-                    file = contextVersion.resources.getResource("/");
-                } else {
-                    file = contextVersion.resources.getResource(pathStr);
-                }
-                if (file != null && file.isDirectory() &&
-                        contextVersion.object.getMapperDirectoryRedirectEnabled()) {
-                    // Note: this mutates the path: do not do any processing
-                    // after this (since we set the redirectPath, there
-                    // shouldn't be any)
-                    path.setOffset(pathOffset);
-                    path.append('/');
-                    mappingData.redirectPath.setChars
-                        (path.getBuffer(), path.getStart(), path.getLength());
+                // Note: Check redirect first to save unnecessary getResource()
+                //       call. See BZ 62968.
+                if (contextVersion.object.getMapperDirectoryRedirectEnabled()) {
+                    WebResource file;
+                    // Handle context root
+                    if (pathStr.length() == 0) {
+                        file = contextVersion.resources.getResource("/");
+                    } else {
+                        file = contextVersion.resources.getResource(pathStr);
+                    }
+                    if (file != null && file.isDirectory()) {
+                        // Note: this mutates the path: do not do any processing
+                        // after this (since we set the redirectPath, there
+                        // shouldn't be any)
+                        path.setOffset(pathOffset);
+                        path.append('/');
+                        mappingData.redirectPath.setChars
+                            (path.getBuffer(), path.getStart(), path.getLength());
+                    } else {
+                        mappingData.requestPath.setString(pathStr);
+                        mappingData.wrapperPath.setString(pathStr);
+                    }
                 } else {
                     mappingData.requestPath.setString(pathStr);
                     mappingData.wrapperPath.setString(pathStr);

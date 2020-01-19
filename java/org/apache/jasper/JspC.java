@@ -45,8 +45,8 @@ import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import javax.servlet.jsp.JspFactory;
-import javax.servlet.jsp.tagext.TagLibraryInfo;
+import jakarta.servlet.jsp.JspFactory;
+import jakarta.servlet.jsp.tagext.TagLibraryInfo;
 
 import org.apache.jasper.compiler.Compiler;
 import org.apache.jasper.compiler.JspConfig;
@@ -426,8 +426,7 @@ public class JspC extends Task implements Options {
                 setThreadCount(nextArg());
             } else {
                 if (tok.startsWith("-")) {
-                    throw new JasperException("Unrecognized option: " + tok +
-                        ".  Use -help for help.");
+                    throw new JasperException(Localizer.getMessage("jspc.error.unknownOption", tok));
                 }
                 if (!fullstop) {
                     argPos--;
@@ -997,10 +996,11 @@ public class JspC extends Task implements Options {
                 newThreadCount = Integer.parseInt(threadCount);
             }
         } catch (NumberFormatException e) {
-            throw new BuildException("Couldn't parse thread count: " + threadCount);
+            throw new BuildException(Localizer.getMessage("jspc.error.parseThreadCount", threadCount));
         }
         if (newThreadCount < 1) {
-            throw new BuildException("There must be at least one thread: " + newThreadCount);
+            throw new BuildException(Localizer.getMessage(
+                    "jspc.error.minThreadCount", Integer.valueOf(newThreadCount)));
         }
         this.threadCount = newThreadCount;
     }
@@ -1033,18 +1033,6 @@ public class JspC extends Task implements Options {
      */
     public void setClassName( String p ) {
         targetClassName=p;
-    }
-
-    /**
-     * File where we generate a web.xml fragment with the class definitions.
-     * @param s New value
-     * @deprecated Will be removed in Tomcat 10.
-     *             Use {@link #setWebXmlInclude(String)}
-     */
-    @Deprecated
-    public void setWebXmlFragment( String s ) {
-        webxmlFile=resolveFile(s).getAbsolutePath();
-        webxmlLevel=INC_WEBXML;
     }
 
     /**
@@ -1393,18 +1381,6 @@ public class JspC extends Task implements Options {
         }
     }
 
-    /**
-     * Locate all jsp files in the webapp. Used if no explicit
-     * jsps are specified.
-     * @param base Base path
-     *
-     * @deprecated This will be removed in Tomcat 10. Use {@link #scanFiles()}
-     */
-    @Deprecated
-    public void scanFiles(File base) {
-        scanFiles();
-    }
-
 
     /**
      * Locate all jsp files in the webapp. Used if no explicit jsps are
@@ -1426,13 +1402,13 @@ public class JspC extends Task implements Options {
         Set<String> paths = context.getResourcePaths(input);
         for (String path : paths) {
             if (path.endsWith("/")) {
-                scanFilesInternal(input.substring(0, input.length() -1) + path);
-            } else if (jspConfig.isJspPage(input + path)) {
+                scanFilesInternal(path);
+            } else if (jspConfig.isJspPage(path)) {
                 pages.add(path);
             } else {
                 String ext = path.substring(path.lastIndexOf('.') + 1);
                 if (extensions.contains(ext)) {
-                    pages.add(input + path.substring(1));
+                    pages.add(path);
                 }
             }
         }
@@ -1541,7 +1517,7 @@ public class JspC extends Task implements Options {
                             }
                         } else {
                             errorCount++;
-                            log.error(e.getMessage());
+                            log.error(Localizer.getMessage("jspc.error.compilation"), e);
                         }
                     } catch (InterruptedException e) {
                         // Ignore
@@ -1558,7 +1534,8 @@ public class JspC extends Task implements Options {
             String msg = Localizer.getMessage("jspc.generation.result",
                     Integer.toString(errorCount), Long.toString(time));
             if (failOnError && errorCount > 0) {
-                System.out.println("Error Count: " + errorCount);
+                System.out.println(Localizer.getMessage(
+                        "jspc.errorCount", Integer.valueOf(errorCount)));
                 throw new BuildException(msg);
             } else {
                 log.info(msg);
@@ -1754,8 +1731,7 @@ public class JspC extends Task implements Options {
                         String ext=libs[i].substring( libs[i].length() - 4 );
                         if (! ".jar".equalsIgnoreCase(ext)) {
                             if (".tld".equalsIgnoreCase(ext)) {
-                                log.warn("TLD files should not be placed in "
-                                         + "/WEB-INF/lib");
+                                log.warn(Localizer.getMessage("jspc.warning.tldInWebInfLib"));
                             }
                             continue;
                         }

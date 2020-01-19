@@ -27,11 +27,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-import javax.servlet.SessionTrackingMode;
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpSession;
-import javax.servlet.http.PushBuilder;
+import jakarta.servlet.SessionTrackingMode;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.PushBuilder;
 
 import org.apache.catalina.Context;
 import org.apache.catalina.authenticator.AuthenticatorBase;
@@ -39,6 +39,7 @@ import org.apache.catalina.connector.Request;
 import org.apache.catalina.util.SessionConfig;
 import org.apache.coyote.ActionCode;
 import org.apache.tomcat.util.buf.HexUtils;
+import org.apache.tomcat.util.buf.MessageBytes;
 import org.apache.tomcat.util.collections.CaseInsensitiveKeyMap;
 import org.apache.tomcat.util.http.CookieProcessor;
 import org.apache.tomcat.util.http.parser.HttpParser;
@@ -158,6 +159,10 @@ public class ApplicationPushBuilder implements PushBuilder {
                 cookies.add(new Cookie(responseCookie.getName(), responseCookie.getValue()));
             }
         }
+        List<String> cookieValues = new ArrayList<>(1);
+        cookieValues.add(generateCookieHeader(cookies,
+                catalinaRequest.getContext().getCookieProcessor()));
+        headers.put("cookie", cookieValues);
 
         // Authentication
         if (catalinaRequest.getPrincipal() != null) {
@@ -339,7 +344,14 @@ public class ApplicationPushBuilder implements PushBuilder {
                 pushTarget.addPathParameter(sessionPathParameterName, sessionId);
             }
             if (addSessionCookie) {
-                cookies.add(new Cookie(sessionCookieName, sessionId));
+                String sessionCookieHeader = sessionCookieName + "=" + sessionId;
+                MessageBytes mb = pushTarget.getMimeHeaders().getValue("cookie");
+                if (mb == null) {
+                    mb = pushTarget.getMimeHeaders().addValue("cookie");
+                    mb.setString(sessionCookieHeader);
+                } else {
+                    mb.setString(mb.getString() + ";" + sessionCookieHeader);
+                }
             }
         }
 
@@ -356,11 +368,6 @@ public class ApplicationPushBuilder implements PushBuilder {
         } else if (pushQueryString != null && queryString != null) {
             pushTarget.queryString().setString(pushQueryString + "&" +queryString);
         }
-
-        // Cookies
-        pushTarget.getMimeHeaders().addValue("cookie")
-            .setString(generateCookieHeader(cookies,
-                catalinaRequest.getContext().getCookieProcessor()));
 
         // Authorization
         if (userName != null) {

@@ -88,7 +88,7 @@ public class TestJNDIRealm {
 
         // THEN
         Assert.assertTrue(principal instanceof GenericPrincipal);
-        Assert.assertEquals(PASSWORD, ((GenericPrincipal)principal).getPassword());
+        Assert.assertEquals(USER, principal.getName());
     }
 
     @Test
@@ -106,7 +106,7 @@ public class TestJNDIRealm {
 
         // THEN
         Assert.assertTrue(principal instanceof GenericPrincipal);
-        Assert.assertEquals(ha1(), ((GenericPrincipal)principal).getPassword());
+        Assert.assertEquals(USER, principal.getName());
     }
 
 
@@ -137,7 +137,7 @@ public class TestJNDIRealm {
             throws NamingException {
         @SuppressWarnings("unchecked")
         NamingEnumeration<SearchResult> searchResults =
-        EasyMock.createNiceMock(NamingEnumeration.class);
+                EasyMock.createNiceMock(NamingEnumeration.class);
         EasyMock.expect(Boolean.valueOf(searchResults.hasMore()))
                 .andReturn(Boolean.TRUE)
                 .andReturn(Boolean.FALSE)

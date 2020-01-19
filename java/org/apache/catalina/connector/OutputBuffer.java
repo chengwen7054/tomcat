@@ -28,11 +28,12 @@ import java.security.PrivilegedExceptionAction;
 import java.util.HashMap;
 import java.util.Map;
 
-import javax.servlet.WriteListener;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.WriteListener;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.catalina.Globals;
 import org.apache.coyote.ActionCode;
+import org.apache.coyote.CloseNowException;
 import org.apache.coyote.Response;
 import org.apache.tomcat.util.buf.C2BConverter;
 import org.apache.tomcat.util.res.StringManager;
@@ -56,6 +57,11 @@ public class OutputBuffer extends Writer {
      */
     private final Map<Charset, C2BConverter> encoders = new HashMap<>();
 
+
+    /**
+     * Default buffer size.
+     */
+    private final int defaultBufferSize;
 
     // ----------------------------------------------------- Instance Variables
 
@@ -127,6 +133,7 @@ public class OutputBuffer extends Writer {
      * @param size Buffer size to use
      */
     public OutputBuffer(int size) {
+        defaultBufferSize = size;
         bb = ByteBuffer.allocate(size);
         clear(bb);
         cb = CharBuffer.allocate(size);
@@ -187,6 +194,10 @@ public class OutputBuffer extends Writer {
         bytesWritten = 0;
         charsWritten = 0;
 
+        if (bb.capacity() > 16 * defaultBufferSize) {
+            // Discard buffers which are too large
+            bb = ByteBuffer.allocate(defaultBufferSize);
+        }
         clear(bb);
         clear(cb);
         closed = false;
@@ -326,6 +337,13 @@ public class OutputBuffer extends Writer {
             // real write to the adapter
             try {
                 coyoteResponse.doWrite(buf);
+            } catch (CloseNowException e) {
+                // Catch this sub-class as it requires specific handling.
+                // Examples where this exception is thrown:
+                // - HTTP/2 stream timeout
+                // Prevent further output for this response
+                closed = true;
+                throw e;
             } catch (IOException e) {
                 // An IOException on a write is almost always due to
                 // the remote client aborting the request. Wrap this

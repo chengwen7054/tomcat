@@ -100,8 +100,7 @@ public class Digester extends DefaultHandler2 {
                     break;
                 } catch (Throwable t) {
                     ExceptionUtils.handleThrowable(t);
-                    LogFactory.getLog("org.apache.tomcat.util.digester.Digester")
-                            .error("Unable to load property source[" + className + "].", t);
+                    LogFactory.getLog(Digester.class).error(sm.getString("digester.propertySourceLoadError", className), t);
                 }
             }
         }
@@ -124,17 +123,43 @@ public class Digester extends DefaultHandler2 {
     // --------------------------------------------------- Instance Variables
 
 
-    private class SystemPropertySource implements IntrospectionUtils.PropertySource {
+    private static class SystemPropertySource implements IntrospectionUtils.SecurePropertySource {
+
         @Override
         public String getProperty(String key) {
-            ClassLoader cl = getClassLoader();
-            if (cl instanceof PermissionCheck) {
+            // For backward compatibility
+            return getProperty(key, null);
+        }
+
+        @Override
+        public String getProperty(String key, ClassLoader classLoader) {
+            if (classLoader instanceof PermissionCheck) {
                 Permission p = new PropertyPermission(key, "read");
-                if (!((PermissionCheck) cl).check(p)) {
+                if (!((PermissionCheck) classLoader).check(p)) {
                     return null;
                 }
             }
             return System.getProperty(key);
+        }
+    }
+
+
+    public static class EnvironmentPropertySource implements IntrospectionUtils.SecurePropertySource {
+
+        @Override
+        public String getProperty(String key) {
+            return null;
+        }
+
+        @Override
+        public String getProperty(String key, ClassLoader classLoader) {
+            if (classLoader instanceof PermissionCheck) {
+                Permission p = new RuntimePermission("getenv." + key, null);
+                if (!((PermissionCheck) classLoader).check(p)) {
+                    return null;
+                }
+            }
+            return System.getenv(key);
         }
     }
 
@@ -241,6 +266,7 @@ public class Digester extends DefaultHandler2 {
      */
     protected ArrayStack<Object> params = new ArrayStack<>();
 
+
     /**
      * The SAXParser we will use to parse the input stream.
      */
@@ -336,7 +362,7 @@ public class Digester extends DefaultHandler2 {
                 String value = System.getProperty(name);
                 if (value != null) {
                     try {
-                        String newValue = IntrospectionUtils.replaceProperties(value, null, propertySources);
+                        String newValue = IntrospectionUtils.replaceProperties(value, null, propertySources, null);
                         if (!value.equals(newValue)) {
                             System.setProperty(name, newValue);
                         }
@@ -613,7 +639,7 @@ public class Digester extends DefaultHandler2 {
         try {
             parser = getFactory().newSAXParser();
         } catch (Exception e) {
-            log.error("Digester.getParser: ", e);
+            log.error(sm.getString("digester.createParserError"), e);
             return null;
         }
 
@@ -851,10 +877,10 @@ public class Digester extends DefaultHandler2 {
             try {
                 rule.finish();
             } catch (Exception e) {
-                log.error("Finish event threw exception", e);
+                log.error(sm.getString("digester.error.finish"), e);
                 throw createSAXException(e);
             } catch (Error e) {
-                log.error("Finish event threw error", e);
+                log.error(sm.getString("digester.error.finish"), e);
                 throw e;
             }
         }
@@ -904,7 +930,7 @@ public class Digester extends DefaultHandler2 {
         // Fire "body" events for all relevant rules
         List<Rule> rules = matches.pop();
         if ((rules != null) && (rules.size() > 0)) {
-            String bodyText = this.bodyText.toString();
+            String bodyText = this.bodyText.toString().intern();
             for (int i = 0; i < rules.size(); i++) {
                 try {
                     Rule rule = rules.get(i);
@@ -913,19 +939,19 @@ public class Digester extends DefaultHandler2 {
                     }
                     rule.body(namespaceURI, name, bodyText);
                 } catch (Exception e) {
-                    log.error("Body event threw exception", e);
+                    log.error(sm.getString("digester.error.body"), e);
                     throw createSAXException(e);
                 } catch (Error e) {
-                    log.error("Body event threw error", e);
+                    log.error(sm.getString("digester.error.body"), e);
                     throw e;
                 }
             }
         } else {
             if (debug) {
-                log.debug("  No rules found matching '" + match + "'.");
+                log.debug(sm.getString("digester.noRulesFound", match));
             }
             if (rulesValidation) {
-                log.warn("  No rules found matching '" + match + "'.");
+                log.warn(sm.getString("digester.noRulesFound", match));
             }
         }
 
@@ -943,10 +969,10 @@ public class Digester extends DefaultHandler2 {
                     }
                     rule.end(namespaceURI, name);
                 } catch (Exception e) {
-                    log.error("End event threw exception", e);
+                    log.error(sm.getString("digester.error.end"), e);
                     throw createSAXException(e);
                 } catch (Error e) {
-                    log.error("End event threw error", e);
+                    log.error(sm.getString("digester.error.end"), e);
                     throw e;
                 }
             }
@@ -987,7 +1013,7 @@ public class Digester extends DefaultHandler2 {
             if (stack.empty())
                 namespaces.remove(prefix);
         } catch (EmptyStackException e) {
-            throw createSAXException("endPrefixMapping popped too many times");
+            throw createSAXException(sm.getString("digester.emptyStackError"));
         }
 
     }
@@ -1173,16 +1199,16 @@ public class Digester extends DefaultHandler2 {
                     }
                     rule.begin(namespaceURI, name, list);
                 } catch (Exception e) {
-                    log.error("Begin event threw exception", e);
+                    log.error(sm.getString("digester.error.begin"), e);
                     throw createSAXException(e);
                 } catch (Error e) {
-                    log.error("Begin event threw error", e);
+                    log.error(sm.getString("digester.error.begin"), e);
                     throw e;
                 }
             }
         } else {
             if (debug) {
-                log.debug("  No rules found matching '" + match + "'.");
+                log.debug(sm.getString("digester.noRulesFound", match));
             }
         }
 
@@ -1353,13 +1379,11 @@ public class Digester extends DefaultHandler2 {
      */
     @Override
     public void error(SAXParseException exception) throws SAXException {
-
-        log.error("Parse Error at line " + exception.getLineNumber() + " column "
-                + exception.getColumnNumber() + ": " + exception.getMessage(), exception);
+        log.error(sm.getString("digester.parseError", Integer.valueOf(exception.getLineNumber()),
+                Integer.valueOf(exception.getColumnNumber())), exception);
         if (errorHandler != null) {
             errorHandler.error(exception);
         }
-
     }
 
 
@@ -1373,13 +1397,11 @@ public class Digester extends DefaultHandler2 {
      */
     @Override
     public void fatalError(SAXParseException exception) throws SAXException {
-
-        log.error("Parse Fatal Error at line " + exception.getLineNumber() + " column "
-                + exception.getColumnNumber() + ": " + exception.getMessage(), exception);
+        log.error(sm.getString("digester.parseErrorFatal", Integer.valueOf(exception.getLineNumber()),
+                Integer.valueOf(exception.getColumnNumber())), exception);
         if (errorHandler != null) {
             errorHandler.fatalError(exception);
         }
-
     }
 
 
@@ -1393,12 +1415,9 @@ public class Digester extends DefaultHandler2 {
      */
     @Override
     public void warning(SAXParseException exception) throws SAXException {
+        log.error(sm.getString("digester.parseWarning", Integer.valueOf(exception.getLineNumber()),
+                Integer.valueOf(exception.getColumnNumber()), exception));
         if (errorHandler != null) {
-            log.warn(
-                    "Parse Warning Error at line " + exception.getLineNumber() + " column "
-                            + exception.getColumnNumber() + ": " + exception.getMessage(),
-                    exception);
-
             errorHandler.warning(exception);
         }
 
@@ -1681,7 +1700,7 @@ public class Digester extends DefaultHandler2 {
         try {
             return stack.peek();
         } catch (EmptyStackException e) {
-            log.warn("Empty stack (returning null)");
+            log.warn(sm.getString("digester.emptyStack"));
             return null;
         }
     }
@@ -1700,7 +1719,7 @@ public class Digester extends DefaultHandler2 {
         try {
             return stack.peek(n);
         } catch (EmptyStackException e) {
-            log.warn("Empty stack (returning null)");
+            log.warn(sm.getString("digester.emptyStack"));
             return null;
         }
     }
@@ -1715,7 +1734,7 @@ public class Digester extends DefaultHandler2 {
         try {
             return stack.pop();
         } catch (EmptyStackException e) {
-            log.warn("Empty stack (returning null)");
+            log.warn(sm.getString("digester.emptyStack"));
             return null;
         }
     }
@@ -1792,7 +1811,7 @@ public class Digester extends DefaultHandler2 {
         try {
             return params.peek();
         } catch (EmptyStackException e) {
-            log.warn("Empty stack (returning null)");
+            log.warn(sm.getString("digester.emptyStack"));
             return null;
         }
     }
@@ -1813,7 +1832,7 @@ public class Digester extends DefaultHandler2 {
             }
             return params.pop();
         } catch (EmptyStackException e) {
-            log.warn("Empty stack (returning null)");
+            log.warn(sm.getString("digester.emptyStack"));
             return null;
         }
     }
@@ -1856,15 +1875,16 @@ public class Digester extends DefaultHandler2 {
             }
         }
         if (locator != null) {
-            String error = "Error at (" + locator.getLineNumber() + ", " + locator.getColumnNumber()
-                    + ") : " + message;
+            String error = sm.getString("digester.errorLocation",
+                    Integer.valueOf(locator.getLineNumber()),
+                    Integer.valueOf(locator.getColumnNumber()), message);
             if (e != null) {
                 return new SAXParseException(error, locator, e);
             } else {
                 return new SAXParseException(error, locator);
             }
         }
-        log.error("No Locator!");
+        log.error(sm.getString("digester.noLocator"));
         if (e != null) {
             return new SAXException(message, e);
         } else {
@@ -1924,17 +1944,13 @@ public class Digester extends DefaultHandler2 {
         for (int i = 0; i < nAttributes; ++i) {
             String value = newAttrs.getValue(i);
             try {
-                String newValue = IntrospectionUtils.replaceProperties(value, null, source);
-                if (value != newValue) {
-                    newAttrs.setValue(i, newValue);
-                }
+                newAttrs.setValue(i, IntrospectionUtils.replaceProperties(value, null, source, getClassLoader()).intern());
             } catch (Exception e) {
                 log.warn(sm.getString("digester.failedToUpdateAttributes", newAttrs.getLocalName(i), value), e);
             }
         }
 
         return newAttrs;
-
     }
 
 
@@ -1947,7 +1963,7 @@ public class Digester extends DefaultHandler2 {
         String in = bodyText.toString();
         String out;
         try {
-            out = IntrospectionUtils.replaceProperties(in, null, source);
+            out = IntrospectionUtils.replaceProperties(in, null, source, getClassLoader());
         } catch (Exception e) {
             return bodyText; // return unchanged data
         }
@@ -1960,6 +1976,4 @@ public class Digester extends DefaultHandler2 {
             return new StringBuilder(out);
         }
     }
-
-
 }

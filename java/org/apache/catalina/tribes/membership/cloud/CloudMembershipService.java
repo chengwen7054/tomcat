@@ -25,7 +25,6 @@ import org.apache.catalina.tribes.Member;
 import org.apache.catalina.tribes.MembershipProvider;
 import org.apache.catalina.tribes.MembershipService;
 import org.apache.catalina.tribes.jmx.JmxRegistry;
-import org.apache.catalina.tribes.membership.Constants;
 import org.apache.catalina.tribes.membership.MemberImpl;
 import org.apache.catalina.tribes.membership.MembershipServiceBase;
 import org.apache.catalina.tribes.util.StringManager;
@@ -36,12 +35,12 @@ public class CloudMembershipService extends MembershipServiceBase
         implements CloudMembershipServiceMBean {
 
     private static final Log log = LogFactory.getLog(CloudMembershipService.class);
-    protected static final StringManager sm = StringManager.getManager(Constants.Package);
+    protected static final StringManager sm = StringManager.getManager(CloudMembershipService.class);
 
     public static final String MEMBERSHIP_PROVIDER_CLASS_NAME = "membershipProviderClassName";
     private static final String KUBE = "kubernetes";
     private static final String KUBE_PROVIDER_CLASS = "org.apache.catalina.tribes.membership.cloud.KubernetesMembershipProvider";
-    static final byte[] INITIAL_ID = new byte[16];
+    protected static final byte[] INITIAL_ID = new byte[16];
 
     private MembershipProvider membershipProvider;
     private MemberImpl localMember;
@@ -148,7 +147,7 @@ public class CloudMembershipService extends MembershipServiceBase
     public void setLocalMemberProperties(String listenHost, int listenPort, int securePort, int udpPort) {
         if (log.isDebugEnabled()) {
             log.debug(String.format("setLocalMemberProperties(%s, %d, %d, %d)", listenHost,
-                    Integer.toString(listenPort), Integer.toString(securePort), Integer.toString(udpPort)));
+                    Integer.valueOf(listenPort), Integer.valueOf(securePort), Integer.valueOf(udpPort)));
         }
         properties.setProperty("tcpListenHost", listenHost);
         properties.setProperty("tcpListenPort", String.valueOf(listenPort));
@@ -226,5 +225,15 @@ public class CloudMembershipService extends MembershipServiceBase
 
     public void setReadTimeout(int readTimeout) {
         properties.setProperty("readTimeout", String.valueOf(readTimeout));
+    }
+
+    @Override
+    public long getExpirationTime() {
+        String expirationTime = properties.getProperty("expirationTime");
+        return Long.parseLong(expirationTime);
+    }
+
+    public void setExpirationTime(long expirationTime) {
+        properties.setProperty("expirationTime", String.valueOf(expirationTime));
     }
 }

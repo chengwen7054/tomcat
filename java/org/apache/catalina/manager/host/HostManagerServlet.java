@@ -28,11 +28,12 @@ import java.util.StringTokenizer;
 import javax.management.InstanceNotFoundException;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
-import javax.servlet.ServletException;
-import javax.servlet.UnavailableException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+
+import jakarta.servlet.ServletException;
+import jakarta.servlet.UnavailableException;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.catalina.Container;
 import org.apache.catalina.ContainerServlet;
@@ -213,7 +214,7 @@ public class HostManagerServlet
 
         // Process the requested command
         if (command == null) {
-            writer.println(sm.getString("hostManagerServlet.noCommand"));
+            writer.println(smClient.getString("hostManagerServlet.noCommand"));
         } else if (command.equals("/add")) {
             add(request, writer, name, false, smClient);
         } else if (command.equals("/remove")) {
@@ -227,7 +228,7 @@ public class HostManagerServlet
         } else if (command.equals("/persist")) {
             persist(writer, smClient);
         } else {
-            writer.println(sm.getString("hostManagerServlet.unknownCommand",
+            writer.println(smClient.getString("hostManagerServlet.unknownCommand",
                                         command));
         }
 
@@ -433,7 +434,7 @@ public class HostManagerServlet
 
         host = (StandardHost) engine.findChild(name);
         if (host != null) {
-            writer.println(smClient.getString("hostManagerServlet.add", name));
+            writer.println(smClient.getString("hostManagerServlet.addSuccess", name));
         } else {
             // Something failed
             writer.println(smClient.getString(
@@ -493,7 +494,7 @@ public class HostManagerServlet
         Host host = (StandardHost) engine.findChild(name);
         if (host == null) {
             writer.println(smClient.getString(
-                    "hostManagerServlet.remove", name));
+                    "hostManagerServlet.removeSuccess", name));
         } else {
             // Something failed
             writer.println(smClient.getString(

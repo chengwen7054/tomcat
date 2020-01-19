@@ -39,8 +39,10 @@ import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 
 public abstract class CloudMembershipProvider extends MembershipProviderBase implements Heartbeat, ChannelListener {
-    private static final Log log = LogFactory.getLog(KubernetesMembershipProvider.class);
-    protected static final StringManager sm = StringManager.getManager(Constants.Package);
+    private static final Log log = LogFactory.getLog(CloudMembershipProvider.class);
+    protected static final StringManager sm = StringManager.getManager(CloudMembershipProvider.class);
+
+    protected static final String CUSTOM_ENV_PREFIX = "OPENSHIFT_KUBE_PING_";
 
     protected String url;
     protected StreamProvider streamProvider;
@@ -52,8 +54,10 @@ public abstract class CloudMembershipProvider extends MembershipProviderBase imp
 
     protected Map<String, String> headers = new HashMap<>();
 
+    protected String localIp;
     protected int port;
-    protected String hostName;
+
+    protected long expirationTime = 5000;
 
     public CloudMembershipProvider() {
         try {
@@ -63,19 +67,33 @@ public abstract class CloudMembershipProvider extends MembershipProviderBase imp
         }
     }
 
-    // Get value of environment variable named keys[0]
-    // If keys[0] isn't found, try keys[1], keys[2], ...
-    // If nothing is found, return null
+    /**
+     * Get value of environment variable.
+     * @param keys the environment variables
+     * @return the env variables values, or null if not found
+     */
     protected static String getEnv(String... keys) {
         String val = null;
-
         for (String key : keys) {
             val = AccessController.doPrivileged((PrivilegedAction<String>) () -> System.getenv(key));
             if (val != null)
                 break;
         }
-
         return val;
+    }
+
+    /**
+     * Get the Kubernetes namespace, or "tomcat" if the Kubernetes environment variable
+     * cannot be found (with a warning log about the missing namespace).
+     * @return the namespace
+     */
+    protected String getNamespace() {
+        String namespace = getEnv("KUBERNETES_NAMESPACE", CUSTOM_ENV_PREFIX + "NAMESPACE");
+        if (namespace == null || namespace.length() == 0) {
+            log.warn(sm.getString("kubernetesMembershipProvider.noNamespace"));
+            namespace = "tomcat";
+        }
+        return namespace;
     }
 
     @Override
@@ -85,8 +103,10 @@ public abstract class CloudMembershipProvider extends MembershipProviderBase imp
         connectionTimeout = Integer.parseInt(properties.getProperty("connectionTimeout", "1000"));
         readTimeout = Integer.parseInt(properties.getProperty("readTimeout", "1000"));
 
-        hostName = InetAddress.getLocalHost().getHostName();
+        localIp = InetAddress.getLocalHost().getHostAddress();
         port = Integer.parseInt(properties.getProperty("tcpListenPort"));
+
+        expirationTime = Long.parseLong(properties.getProperty("expirationTime", "5000"));
     }
 
     @Override
@@ -127,7 +147,7 @@ public abstract class CloudMembershipProvider extends MembershipProviderBase imp
             }
         }
         // Remove non refreshed members from the membership
-        Member[] expired = membership.expire(100); // TODO: is 100ms a good value?
+        Member[] expired = membership.expire(expirationTime);
         for (Member member : expired) {
             if (log.isDebugEnabled()) {
                 log.debug("Member disappeared: " + member);
